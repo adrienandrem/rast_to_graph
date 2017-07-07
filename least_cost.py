@@ -14,7 +14,7 @@
         email                : peillet.seb@gmail.com
  ***************************************************************************/
 """
- import os
+import os
 import sys
 from osgeo import gdal
 from osgeo import ogr
@@ -22,7 +22,31 @@ from osgeo import osr
 from osgeo import gdal_array
 from osgeo import gdalconst
 from collections import defaultdict
+from datetime import datetime
 import math
+
+#Timer to show processing time
+class Timer():
+  startTimes=dict()
+  stopTimes=dict()
+
+  @staticmethod
+  def start(key = 0):
+    Timer.startTimes[key] = datetime.now()
+    Timer.stopTimes[key] = None
+
+  @staticmethod
+  def stop(key = 0):
+    Timer.stopTimes[key] = datetime.now()
+
+  @staticmethod
+  def show(key = 0):
+    if key in Timer.startTimes:
+      if Timer.startTimes[key] is not None:
+        if key in Timer.stopTimes:
+          if Timer.stopTimes[key] is not None:
+            delta = Timer.stopTimes[key] - Timer.startTimes[key]
+            print delta
 
 class Graph ():
     def __init__(self):
@@ -287,6 +311,9 @@ def main() :
     print 'Name vector output'
     out_name=output_prep(scr_shp)
     
+    time=Timer()
+    time.start()
+    
     print 'Convert rast to graph...'
     G = rast_to_graph(in_array, res)
     print 'Convert rast to graph done'
@@ -318,6 +345,10 @@ def main() :
         
         create_ridge(out_name,coord_list,beg_id,end_id)
         print 'Create the least cost path as OGR LineString done'
+        
+    time.stop()
+    print 'processing Time :'
+    time.show()
             
 if __name__ == '__main__':
     sys.exit(main())
