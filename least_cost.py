@@ -85,17 +85,18 @@ def imp_init_point(gt):
     #Open the init point shapefile to project each feature in pixel coordinates
     ds=ogr.Open(iFile_name)
     lyr=ds.GetLayer()
+    src = lyr.GetSpatialRef()
     for feat in lyr:
         geom = feat.GetGeometryRef()
         mx,my=geom.GetX(), geom.GetY()
 
         #Convert from map to pixel coordinates.
-        px = int((mx - gt[0]) / gt[1])
-        py = int((my - gt[3]) / gt[5])
+        px = int(( my - gt[3] + gt[5]/2) / gt[5])
+        py = int(((mx - gt[0]+ gt[1]/2) / gt[1]))
         init_list.append((px,py))
     
     #return the list of init point with x,y pixel coordinates
-    return init_list
+    return init_list, src
 
 def imp_end_point(gt):
     print 'ENTER input end point path'
@@ -112,8 +113,8 @@ def imp_end_point(gt):
         mx,my=geom.GetX(), geom.GetY()
 
         #Convert from map to pixel coordinates.
-        px = int((mx - gt[0]) / gt[1])
-        py = int((my - gt[3]) / gt[5])
+        px = int(( my - gt[3] + gt[5]/2) / gt[5])
+        py = int((mx - gt[0]+ gt[1]/2) / gt[1])
         end_list.append((px,py))
     
     #return the list of end point with x,y pixel coordinates + spatial ref to reproj point => id_to_coord()
@@ -122,12 +123,13 @@ def imp_end_point(gt):
     
 def output_prep(src):
     #Initialize the shapefile output
-
-    oFile_name=raw_input()
+    
+    print 'path output :'
+    oLineFile_name=raw_input()
     oDriver=ogr.GetDriverByName("ESRI Shapefile")
-    if os.path.exists(oFile_name):
-        oDriver.DeleteDataSource(oFile_name)
-    oDataSource=oDriver.CreateDataSource(oFile_name)
+    if os.path.exists(oLineFile_name):
+        oDriver.DeleteDataSource(oLineFile_name)
+    oDataSource=oDriver.CreateDataSource(oLineFile_name)
     
     #Create a LineString layer
     oLayer = oDataSource.CreateLayer("ridge",src,geom_type=ogr.wkbLineString)
@@ -138,7 +140,19 @@ def output_prep(src):
     oLayer.CreateField(colID_field)
     oLayer.CreateField(picID_field)
     
-    return oFile_name
+    print 'point output'
+    oPointFile_name=raw_input()
+    oDriver=ogr.GetDriverByName("ESRI Shapefile")
+    if os.path.exists(oPointFile_name):
+        oDriver.DeleteDataSource(oPointFile_name)
+    oDataSource=oDriver.CreateDataSource(oPointFile_name)
+    
+    #Create a LineString layer
+    oLayer = oDataSource.CreateLayer("point",src,geom_type=ogr.wkbPoint)
+    ordreID_field=ogr.FieldDefn("ordre_id",ogr.OFTString)
+    oLayer.CreateField(ordreID_field)
+    
+    return oLineFile_name, oPointFile_name
     
 def rast_to_graph(rastArray, res) :
     G= Graph()
@@ -156,7 +170,7 @@ def rast_to_graph(rastArray, res) :
     #   13| 5 | 6 | 7 | 16
     #  ---|---|---|---|---
     #     | 14|   | 15|
-    
+    #          px  py
     shift = [( 0,  0),
              (-1,  1),
              (-1,  0),
@@ -203,7 +217,7 @@ def rast_to_graph(rastArray, res) :
                     addcost=0
                     #max slope accepted in percent
                     max_slope_wanted= 10
-                    if slope >10 :
+                    if slope >max_slope_wanted :
                         #coeff to prevent steep path
                         coeff= 4
                         addcost=(slope-max_slope_wanted)*coeff
@@ -214,12 +228,14 @@ def rast_to_graph(rastArray, res) :
                     continue
     return G
     
-def dijkstra(graph, init, end_list):
+def dijkstra(graph, init, end_list, out_point, scr):
     #change the end point coordinates to graph id
     end_name=[]
     for end_point in end_list :
         x,y=end_point
-        end_name.append("x"+str(x)+"y"+str(y))
+        end_id = "x"+str(x)+"y"+str(y)
+        if end_id != init :
+            end_name.append(end_id)
     
     #dict to get visited nodes and path
     visited = {init: 0}
@@ -228,31 +244,63 @@ def dijkstra(graph, init, end_list):
     nodes = set(graph.nodes)
 
     #dijkstra algo
+    min_node = None
     while nodes: 
-        min_node = None
-        for node in nodes:
-            if node in visited:
-                if node in end_name :
-                    finish = node
-                if min_node is None:
-                    min_node = node
-                elif visited[node] < visited[min_node]:
-                    min_node = node
+        if min_node not in end_name:
+            min_node = None
+            for node in nodes:
+                if node in visited:
+                    if node in end_name :
+                        finish = node
+                    if min_node is None:
+                        min_node = node
+                    elif visited[node] < visited[min_node]:
+                        min_node = node
 
-        if min_node in end_name:
+
+            createPoint(out_point,min_node,scr)
+            nodes.remove(min_node)
+            current_weight = visited[min_node]
+
+            for edge in graph.edges[min_node]:
+                if min_node in path : 
+                    pid,w = path[min_node][-1]
+                    x1,y1 = id_to_coord(pid)
+                    x2,y2 = id_to_coord(min_node)
+                    x3,y3 = id_to_coord(edge)
+                    az1 = math.degrees(math.atan2(x2 - x1, y2 - y1))
+                    az2 = math.degrees(math.atan2(x3 - x2, y3 - y2))
+                    if az1 < 0 and az2 > 0 :
+                        angle = math.fabs(az1)+az2
+                    elif az1 > 0 and az2 < 0 :
+                        angle = math.fabs(az2)+az1
+                    else :
+                        angle = math.fabs(az1-az2)
+                    if angle < -180 :
+                        angle = angle + 360
+                    if angle > 180 :
+                        angle = angle - 360
+                    if math.fabs(angle) <= 60 :
+                        weight = current_weight + graph.weight[(min_node, edge)]
+                        if edge not in visited or weight < visited[edge]:
+                            visited[edge] = weight
+                            path[edge].append((min_node,weight))
+                else :
+                    weight = current_weight + graph.weight[(min_node, edge)]
+                    if edge not in visited or weight < visited[edge]:
+                        visited[edge] = weight
+                        path[edge].append((min_node,weight))
+        else :
             break
-
-        nodes.remove(min_node)
-        current_weight = visited[min_node]
-
-        for edge in graph.edges[min_node]:
-            weight = current_weight + graph.weight[(min_node, edge)]
-            if edge not in visited or weight < visited[edge]:
-                visited[edge] = weight
-                path[edge].append((min_node,weight))
     return path, finish
 
-def id_to_coord(lcp,gt):
+def id_to_coord(id):
+    id=id[1:]
+    px,py=id.split('y')
+    px,py=int(px),int(py)
+    return px,py
+
+def ids_to_coord(lcp,gt):
     #Reproj pixel coordinates to map coordinates
     coord_list = []
     for id in lcp :
@@ -261,13 +309,37 @@ def id_to_coord(lcp,gt):
         px,py=int(px),int(py)
         
         #Convert from pixel to map coordinates.
-        mx = px * gt[1] + gt[0] + gt[1]/2
-        my = py * gt[5] + gt[3] + gt[5]/2
+        mx = py * gt[1] + gt[0] - gt[1]/2
+        my = px * gt[5] + gt[3] + gt[5]/2
         
         coord_list.append((mx,my))
     #return the list of end point with x,y map coordinates
     return coord_list
 
+def createPoint(oFile, node, gt) :
+    driver= ogr.GetDriverByName("ESRI Shapefile")
+    
+    #Open the output shapefile
+    iDataSource = driver.Open(oFile,1)
+    iLayer = iDataSource.GetLayer()
+    featDefn = iLayer.GetLayerDefn()
+    count = iLayer.GetFeatureCount()
+    #Initiate feature
+    feat = ogr.Feature(featDefn)
+    px,py=id_to_coord(node)
+    #Initiate feature geometry
+    point = ogr.Geometry(ogr.wkbPoint)
+    mx = py * gt[1] + gt[0] - gt[1]/2
+    my = px * gt[5] + gt[3] + gt[5]/2
+    point.AddPoint(mx,my)
+    feat.SetGeometry(point)
+    feat.SetField('ordre_id',count+1)
+    iLayer.CreateFeature(feat)
+    
+    
+    feature = None
+    iDataSource = None
+    
 def create_ridge(oFile,lcp, col, pic) :
     driver= ogr.GetDriverByName("ESRI Shapefile")
     
@@ -302,14 +374,12 @@ def main() :
     
     
     print 'Import vector ...'
-    beg_list = imp_init_point(scr)
-    print '%s beg_point feature(s)' % len(beg_list)
-    end_list, scr_shp = imp_end_point(scr)
-    print '%s end_point feature(s)' % len(end_list)
+    beg_list, scr_shp = imp_init_point(scr)
+    print '%s feature(s)' % len(beg_list)
     print 'Import vector done'
 
-    print 'Name vector output'
-    out_name=output_prep(scr_shp)
+    print 'Name vector output...'
+    out_line,out_point=output_prep(scr_shp)
     
     time=Timer()
     time.start()
@@ -325,12 +395,12 @@ def main() :
     print '%s edges in the graph' % sum_nodes
 
     #Begin to search least_cost path for each beg point
+    i=1
     for beg_point in beg_list :
-        print 'Searching the least cost path... '
         x,y = beg_point
         beg_id = "x"+str(x)+"y"+str(y)
-        
-        path, end_id = dijkstra(G,beg_id,end_list)
+        print 'Searching the least cost path for %s' % beg_id
+        path, end_id = dijkstra(G,beg_id,beg_list, out_point, scr)
         print 'Searching the least cost path done'
         
         act=end_id
@@ -340,10 +410,14 @@ def main() :
             id,w=path[act][-1]
             act=id
             leastCostPath.append(id)
-            
-        coord_list = id_to_coord(leastCostPath,scr)
+        filename="lcp"+str(i)+".txt"
+        file = open(filename,"w")
+        file.write(str(leastCostPath))
+        file.close()
+        i+=1
+        coord_list = ids_to_coord(leastCostPath,scr)
         
-        create_ridge(out_name,coord_list,beg_id,end_id)
+        create_ridge(out_line,coord_list,beg_id,end_id)
         print 'Create the least cost path as OGR LineString done'
         
     time.stop()
