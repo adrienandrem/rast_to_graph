@@ -92,7 +92,7 @@ def imp_init_point(gt):
 
         #Convert from map to pixel coordinates.
         px = int(( my - gt[3] + gt[5]/2) / gt[5])
-        py = int(((mx - gt[0]+ gt[1]/2) / gt[1]))
+        py = int(((mx - gt[0] - gt[1]/2) / gt[1]))
         init_list.append((px,py))
     
     #return the list of init point with x,y pixel coordinates
@@ -309,7 +309,7 @@ def ids_to_coord(lcp,gt):
         px,py=int(px),int(py)
         
         #Convert from pixel to map coordinates.
-        mx = py * gt[1] + gt[0] - gt[1]/2
+        mx = py * gt[1] + gt[0] + gt[1]/2
         my = px * gt[5] + gt[3] + gt[5]/2
         
         coord_list.append((mx,my))
@@ -329,7 +329,7 @@ def createPoint(oFile, node, gt) :
     px,py=id_to_coord(node)
     #Initiate feature geometry
     point = ogr.Geometry(ogr.wkbPoint)
-    mx = py * gt[1] + gt[0] - gt[1]/2
+    mx = py * gt[1] + gt[0] + gt[1]/2
     my = px * gt[5] + gt[3] + gt[5]/2
     point.AddPoint(mx,my)
     feat.SetGeometry(point)
