@@ -84,7 +84,7 @@ class AdvGraph ():
     
     def add_edge (self, beg, end):
         self.edges[beg[0]].append(end)
-        self.weight[(beg[0],end)] = beg[1][0][2]+self.nodes[end][0][2]
+        self.weight[(beg[0],end)] = self.nodes[end][0][2]
     
     def add_info(self, beg, end, length, slope):
         self.slope_info[beg].append(end)
@@ -973,6 +973,101 @@ def createPoint(oFile, node, gt, weight, nb_path, previous) :
     feature = None
     iDataSource = None
 
+def get_lcp(beg_id,path,end_id):
+    if end_id != None :
+        act=end_id
+        leastCostPath=[end_id]
+        print 'Create the least cost path as OGR LineString...'
+        while act not in beg_id :
+            id,w=path[act][-1]
+            act=id
+            leastCostPath.append(id)
+    else :
+        leastCostPath = None
+    return leastCostPath
+
+def get_adv_lcp(beg_list,path,end_id, method,threshold) :
+    if end_id != None :
+        pt2, pt1 = end_id.split('|')
+        act=end_id
+        leastCostPath=[pt1,pt2]
+        print 'Create the least cost path as OGR LineString...'
+        while act not in beg_list :
+            pt2, pt1 = act.split('|')
+            pt2 = pt2[1:]
+            x2, y2 = pt2.split('y')
+            pt1 = pt1[1:]
+            x1, y1 = pt1.split('y')
+            feasible_path=[]
+            for edge in path[act] :
+                prev = edge[0]
+                pt3, pt2 = prev('|')
+                pt3= pt3[:1]
+                x3, y3 = pt3.split('y')
+                if method == 'angle' :
+                    az1 = math.degrees(math.atan2(x2 - x1, y2 - y1))
+                    az2 = math.degrees(math.atan2(x3 - x2, y3 - y2))
+                    if az1 < 0 and az2 > 0 :
+                        angle = math.fabs(az1)+az2
+                    elif az1 > 0 and az2 < 0 :
+                        angle = math.fabs(az2)+az1
+                    else :
+                        angle = math.fabs(az1-az2)
+                    if angle < -180 :
+                        angle = angle + 360
+                    if angle > 180 :
+                        angle = angle - 360
+                    if math.fabs(angle) <= threshold :
+                        feasible_path.append(edge)
+                        
+                if method == 'radius' :
+                    if min(x1,x3) <= x2 <= max(x1,x3) and min(y1,y3) <= y2 <= max(y1,y3):
+                    
+                        mag_v1 = math.sqrt((x1-x2)**2+(y1-y2)**2)
+                        mag_v2 = math.sqrt((x3-x2)**2+(y3-y2)**2)
+                        
+                        if mag_v1 < mag_v2 :
+                            x_v2 , y_v2 = (x3 - x2, y3 - y2)
+                            x3,y3 = x2+x_v2/mag_v2*mag_v1 ,y2+y_v2/mag_v2*mag_v1
+                        elif mag_v2 < mag_v1 :
+                            x_v2 , y_v2 = (x1 - x2, y1 - y2)
+                            x1,y1 = x2+x_v2/mag_v1*mag_v2 ,y2+y_v2/mag_v1*mag_v2
+                            
+                        x_v1 , y_v1 = (x2 - x1, y2 - y1)
+                        x_v1_ort , y_v1_ort = y_v1 , -x_v1
+                        x_v2 , y_v2 = (x3 - x2, y3 - y2)
+                        x_v2_ort , y_v2_ort = y_v2 , -x_v2
+                        
+                        c_v1_ort = y_v1_ort*x1+(-x_v1_ort)*y1
+                        c_v1_ort = -c_v1_ort
+                        c_v2_ort = y_v2_ort*x3+(-x_v2_ort)*y3
+                        c_v2_ort = -c_v2_ort
+                        
+                        e = [-y_v1_ort,x_v1_ort,c_v1_ort]
+                        f = [-y_v2_ort,x_v2_ort,c_v2_ort]
+                        x4 , y4, colineaire = equationResolve(e,f)
+ 
+                        if (x4 != None and y4 != None) :
+                            dist1 = math.sqrt((x1-x4)**2+(y1-y4)**2)*5
+                            
+                            if dist1 >= threshold :
+                                feasible_path.append(edge)
+                                    
+            weight = None
+            for path in feasible_path :
+                if weight == None :
+                    weight = path[1]
+                    id = path[0]
+                elif path[1] < weight :
+                    weight = path[1]
+                    id = path[0]
+            act = id
+            pt3, pt2 = id.split('|')
+            leastCostPath.append(pt3)
+    else :
+        leastCostPath = None
+    return leastCostPath
+    
 def standard_algo():
         #Main function
     print 'Import raster...'
@@ -1041,15 +1136,9 @@ def standard_algo():
         i+=1
         print 'Searching the least cost path done'
         
-        if end_id != None :
-            act=end_id
-            leastCostPath=[end_id]
-            print 'Create the least cost path as OGR LineString...'
-            while act!=beg_id :
-                id,w=path[act][-1]
-                act=id
-                leastCostPath.append(id)
-            
+        leastCostPath = get_lcp(beg_id,path,end_id)
+        
+        if leastCostPath != None :
             filename="lcp"+str(i)+".txt"
             file = open(filename,"w")
             file.write(str(leastCostPath))
@@ -1064,6 +1153,8 @@ def standard_algo():
             id,w=path[end_id][-1]
             create_ridge(out_line,coord_list,beg_id,end_id,w)
             print 'Create the least cost path as OGR LineString done'
+        else :
+            print 'No path'
         
     time.stop()
     print 'processing Time :'
@@ -1081,15 +1172,9 @@ def advanced_algo():
     print '%s feature(s)' % len(point_list)
     print 'Import vector done'
 
-    # print 'Name vector output...'
-    # print 'path :'
-    # out_line=output_prep(scr_shp)
-    # print 'Get points process history ? (y/n)'
-    # point_save = raw_input()
-    # if point_save == 'y' :
-        # out_point = out_point_prep(scr_shp)
-    # else :
-        # out_point = None
+    print 'Name vector output...'
+    print 'path :'
+    out_line=output_prep(scr_shp)
     
     print 'Edges model : (8/24/40/48)'
     nb_edge = int(input())
@@ -1138,31 +1223,23 @@ def advanced_algo():
         i+=1
         print 'Searching the least cost path done'
         
-        filename="path"+str(i)+".txt"
+        # filename="path"+str(i)+".txt"
+        # file = open(filename,"w")
+        # file.write(str(path))
+        # file.close()
+        
+        leastCostPath = get_adv_lcp(beg_list,path,end_id, method,threshold)
+            
+        filename="lcp"+str(i)+".txt"
         file = open(filename,"w")
-        file.write(str(path))
+        file.write(str(leastCostPath))
         file.close()
         
-        if end_id != None :
-            act=end_id
-            leastCostPath=[end_id]
-            print 'Create the least cost path as OGR LineString...'
-            while act not in beg_list :
-                id,w=path[act][-1]
-                act=id
-                leastCostPath.append(id)
-            
-            filename="lcp"+str(i)+".txt"
-            file = open(filename,"w")
-            file.write(str(leastCostPath))
-            file.close()
-            
-
-            
-            # coord_list = ids_to_coord(leastCostPath,scr)
-            # id,w=path[end_id][-1]
-            # create_ridge(out_line,coord_list,beg_id,end_id,w)
-            print 'Create the least cost path as OGR LineString done'
+        coord_list = ids_to_coord(leastCostPath,scr)
+        id,w=path[end_id][-1]
+        end_pt = id.split('|')
+        create_ridge(out_line,coord_list,beg_id,end_pt,w)
+        print 'Create the least cost path as OGR LineString done'
         
     time.stop()
     print 'processing Time :'
