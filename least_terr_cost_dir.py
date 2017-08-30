@@ -1001,7 +1001,7 @@ def get_adv_lcp(beg_list,path,end_id, method,threshold) :
             feasible_path=[]
             for edge in path[act] :
                 prev = edge[0]
-                pt3, pt2 = prev('|')
+                pt3, pt2 = prev.split('|')
                 pt3= pt3[:1]
                 x3, y3 = pt3.split('y')
                 if method == 'angle' :
