@@ -429,7 +429,9 @@ def rast_to_adv_graph(rastArray, res, nb_edge, max_slope, method, threshold) :
                     x1,y1 = id_to_coord(node1[1][0][0])
                     x2,y2 = id_to_coord(node1[1][0][1])
                     x3,y3 = id_to_coord(nodes[node2][0][1])
-                    
+                    az1 = math.degrees(math.atan2(x2 - x1, y2 - y1))
+                    az2 = math.degrees(math.atan2(x3 - x2, y3 - y2))
+                    # if az1 != (az2+180) and az1 != (az2-180):
                     if min(x1,x3) <= x2 <= max(x1,x3) and min(y1,y3) <= y2 <= max(y1,y3):
                     
                         mag_v1 = math.sqrt((x1-x2)**2+(y1-y2)**2)
@@ -461,7 +463,9 @@ def rast_to_adv_graph(rastArray, res, nb_edge, max_slope, method, threshold) :
                             
                             if dist1 >= threshold :
                                 G.add_edge(node1, node2)
-    
+                        
+                        elif colineaire == True :
+                            G.add_edge(node1, node2)
     return G
     
 def rast_to_graph(rastArray, res, nb_edge, max_slope) :
@@ -938,6 +942,7 @@ def create_ridge(oFile,lcp, col, pic, weight) :
     feat.SetGeometry(line)
     
     #Update the data field
+    print pic
     feat.SetField("col_id",col)
     feat.SetField("pic_id",pic)
     feat.SetField("weight",weight)
@@ -1002,8 +1007,9 @@ def get_adv_lcp(beg_list,path,end_id, method,threshold) :
             for edge in path[act] :
                 prev = edge[0]
                 pt3, pt2 = prev.split('|')
-                pt3= pt3[:1]
+                pt3= pt3[1:]
                 x3, y3 = pt3.split('y')
+                x1,y1,x2,y2,x3,y3 = int(x1),int(y1),int(x2),int(y2),int(x3),int(y3)
                 if method == 'angle' :
                     az1 = math.degrees(math.atan2(x2 - x1, y2 - y1))
                     az2 = math.degrees(math.atan2(x3 - x2, y3 - y2))
@@ -1021,6 +1027,9 @@ def get_adv_lcp(beg_list,path,end_id, method,threshold) :
                         feasible_path.append(edge)
                         
                 if method == 'radius' :
+                    az1 = math.degrees(math.atan2(x2 - x1, y2 - y1))
+                    az2 = math.degrees(math.atan2(x3 - x2, y3 - y2))
+                    # if az1 != (az2+180) and az1 != (az2-180):
                     if min(x1,x3) <= x2 <= max(x1,x3) and min(y1,y3) <= y2 <= max(y1,y3):
                     
                         mag_v1 = math.sqrt((x1-x2)**2+(y1-y2)**2)
@@ -1052,15 +1061,18 @@ def get_adv_lcp(beg_list,path,end_id, method,threshold) :
                             
                             if dist1 >= threshold :
                                 feasible_path.append(edge)
+                        
+                        elif colineaire == True :
+                            feasible_path.append(edge)
                                     
             weight = None
-            for path in feasible_path :
+            for w_path in feasible_path :
                 if weight == None :
-                    weight = path[1]
-                    id = path[0]
+                    weight = w_path[1]
+                    id = w_path[0]
                 elif path[1] < weight :
-                    weight = path[1]
-                    id = path[0]
+                    weight = w_path[1]
+                    id = w_path[0]
             act = id
             pt3, pt2 = id.split('|')
             leastCostPath.append(pt3)
@@ -1223,10 +1235,10 @@ def advanced_algo():
         i+=1
         print 'Searching the least cost path done'
         
-        # filename="path"+str(i)+".txt"
-        # file = open(filename,"w")
-        # file.write(str(path))
-        # file.close()
+        filename="path"+str(i)+".txt"
+        file = open(filename,"w")
+        file.write(str(path))
+        file.close()
         
         leastCostPath = get_adv_lcp(beg_list,path,end_id, method,threshold)
             
@@ -1235,9 +1247,14 @@ def advanced_algo():
         file.write(str(leastCostPath))
         file.close()
         
+        filename="lcp"+str(i)+".txt"
+        file = open(filename,"w")
+        file.write(str(visited))
+        file.close()
+        
         coord_list = ids_to_coord(leastCostPath,scr)
-        id,w=path[end_id][-1]
-        end_pt = id.split('|')
+        end_pt = leastCostPath[0] 
+        w = visited[end_id]
         create_ridge(out_line,coord_list,beg_id,end_pt,w)
         print 'Create the least cost path as OGR LineString done'
         
