@@ -2,14 +2,14 @@
 # -*- coding: utf-8 -*-
 """"
 /***************************************************************************
- least_cost.py
+ m_least_cost_dir.py
 
  Perform a least cost path with a raster conversion in graph
  
  Need : OsGeo library
                               -------------------
         begin                : 2017-07-07
-        git sha              : 2017-07-07
+        git sha              : 2017-09-25
         copyright            : (C) 2017 by Peillet Sebastien
         email                : peillet.seb@gmail.com
  ***************************************************************************/
@@ -71,7 +71,7 @@ class Graph ():
 
 class AdvGraph ():
     def __init__(self) :
-        self.nodes = defaultdict(list)
+        self.nodes = []
         self.edges=defaultdict(list)
         self.slope_info=defaultdict(list)
         self.length = {}
@@ -79,17 +79,25 @@ class AdvGraph ():
         self.weight = {}
     
     def add_nodes(self, id, beg_id, end_id, cost) :
-        data = [beg_id, end_id, cost]
-        self.nodes[id].append(data)
-    
-    def add_edge (self, beg, end):
-        self.edges[beg[0]].append(end)
-        self.weight[(beg[0],end)] = self.nodes[end][0][2]
+        node = NodeGraph(id,beg_id, end_id, cost)
+        self.nodes.append(node)
     
     def add_info(self, beg, end, length, slope):
         self.slope_info[beg].append(end)
         self.length[(beg,end)] = length
         self.slope[(beg,end)] = slope
+
+class NodeGraph():
+    def __init__(self, id, beg, end, cost) :
+        self.id = id
+        self.beg = beg
+        self.end = end
+        self.cost = cost
+        self.cumcost = None
+        self.edges = []
+    
+    def add_edge(self,node) :
+        self.edges.append(node)
         
     
 def imp_raster():
@@ -345,6 +353,8 @@ def rast_to_adv_graph(rastArray, res, nb_edge, max_slope, method, threshold) :
                 except IndexError :
                     continue
     
+    ind=0
+    nodes_dict={}
     for i in range(0,H) :
         for j in range(0,W) :
             nodeBeg = "x"+str(i)+"y"+str(j)
@@ -387,51 +397,35 @@ def rast_to_adv_graph(rastArray, res, nb_edge, max_slope, method, threshold) :
                                 
                                 cost = length * addcost + length * 1
                                 G.add_nodes(id, nodeBeg, nodeEnd, cost)
+                                nodes_dict[id] = ind
+                                ind+=1
                     except IndexError :
                         continue
     nodes = G.nodes
     
-    for node1 in nodes.items() :
-        x2,y2 = id_to_coord(node1[1][0][1])
+    for node1 in nodes :
+        x2,y2 = id_to_coord(node1.end)
         id_pt1 = "x"+str(x2)+"y"+str(y2)
-        list_pos_edge = []
+        list_ind = []
         for index in range(1,nb_edge) :
             i,j = shift[index]
             if (i+x2) > 0 and (j+y2) > 0 and (i+x2) < H and (j+y2) < W :
                 x3,y3 = (x2+i,y2+j)
                 id_pt2 = "x"+str(x3)+"y"+str(y3)
                 id_next = id_pt1+'|'+id_pt2
-                if id_next in nodes :
-                    list_pos_edge.append(id_next)
-        
-        for node2 in list_pos_edge :
-            if node1[0] != node2 and node1[1][0][1] == nodes[node2][0][0] :
-                if method == 'angle' :
-                        x1,y1 = id_to_coord(node1[1][0][0])
-                        x2,y2 = id_to_coord(node1[1][0][1])
-                        x3,y3 = id_to_coord(nodes[node2][0][1])
-                        az1 = math.degrees(math.atan2(x2 - x1, y2 - y1))
-                        az2 = math.degrees(math.atan2(x3 - x2, y3 - y2))
-                        if az1 < 0 and az2 > 0 :
-                            angle = math.fabs(az1)+az2
-                        elif az1 > 0 and az2 < 0 :
-                            angle = math.fabs(az2)+az1
-                        else :
-                            angle = math.fabs(az1-az2)
-                        if angle < -180 :
-                            angle = angle + 360
-                        if angle > 180 :
-                            angle = angle - 360
-                        if math.fabs(angle) <= threshold :
-                            G.add_edge(node1[0] , node2)
-                            
+                if id_next in nodes_dict :
+                    list_ind.append(nodes_dict[id_next])
+                
+        for edge in list_ind :
+            node2 = nodes[edge]
+            if node1.id != node2.id and node1.end == node2.beg :                            
                 if method == 'radius' :
-                    x1,y1 = id_to_coord(node1[1][0][0])
-                    x2,y2 = id_to_coord(node1[1][0][1])
-                    x3,y3 = id_to_coord(nodes[node2][0][1])
+                    x1,y1 = id_to_coord(node1.beg)
+                    x2,y2 = id_to_coord(node1.end)
+                    x3,y3 = id_to_coord(node2.end)
                     az1 = math.degrees(math.atan2(x2 - x1, y2 - y1))
                     az2 = math.degrees(math.atan2(x3 - x2, y3 - y2))
-                    # if az1 != (az2+180) and az1 != (az2-180):
+                    
                     if min(x1,x3) <= x2 <= max(x1,x3) and min(y1,y3) <= y2 <= max(y1,y3):
                     
                         mag_v1 = math.sqrt((x1-x2)**2+(y1-y2)**2)
@@ -457,15 +451,34 @@ def rast_to_adv_graph(rastArray, res, nb_edge, max_slope, method, threshold) :
                         e = [-y_v1_ort,x_v1_ort,c_v1_ort]
                         f = [-y_v2_ort,x_v2_ort,c_v2_ort]
                         x4 , y4, colineaire = equationResolve(e,f)
- 
+
                         if (x4 != None and y4 != None) :
                             dist1 = math.sqrt((x1-x4)**2+(y1-y4)**2)*5
                             
                             if dist1 >= threshold :
-                                G.add_edge(node1, node2)
+                                node1.add_edge(node2)
                         
                         elif colineaire == True :
-                            G.add_edge(node1, node2)
+                            node1.add_edge(node2)
+                
+                if method == 'angle' :
+                    x1,y1 = id_to_coord(node1.beg)
+                    x2,y2 = id_to_coord(node1.end)
+                    x3,y3 = id_to_coord(node2.end)
+                    az1 = math.degrees(math.atan2(x2 - x1, y2 - y1))
+                    az2 = math.degrees(math.atan2(x3 - x2, y3 - y2))
+                    if az1 < 0 and az2 > 0 :
+                        angle = math.fabs(az1)+az2
+                    elif az1 > 0 and az2 < 0 :
+                        angle = math.fabs(az2)+az1
+                    else :
+                        angle = math.fabs(az1-az2)
+                    if angle < -180 :
+                        angle = angle + 360
+                    if angle > 180 :
+                        angle = angle - 360
+                    if math.fabs(angle) <= threshold :
+                        node1.add_edge(node2)
     return G
     
 def rast_to_graph(rastArray, res, nb_edge, max_slope) :
@@ -704,58 +717,56 @@ def adv_dijkstra(graph, init, end_list) :
     nodes = graph.nodes
     
     beg_list = []
-    visited = {}
     
     #dict to get path
     path = defaultdict(list)
     
     #Init
-    for node in nodes.items() :
-        if node[1][0][0] == init :
-            visited[node[0]] = node[1][0][2]
-            beg_list.append(node[0])
-            path[node[0]].append((node[0],visited[node[0]]))
+    for node in nodes :
+        if node.beg == init :
+            node.cumcost = node.cost
+            beg_list.append(node.id)
+            path[node.id].append((node.id,node.cumcost))
 
     
     
-    min_node = [0,[[0,0]]]
+    min_node = NodeGraph(0,0,0,0)
     while nodes: 
-        if min_node[1][0][1] not in end_name:
+        if min_node.end not in end_name:
             min_node = None
-            for node in nodes.items():
-                if node[0] in visited:
-                    if node[1][0][1] in end_name :
-                        finish = node[0]
-                    if min_node is None:
+            for i,node in enumerate(nodes) :
+                if node.cumcost != None :
+                    if min_node is None :
+                        ind = i
                         min_node = node
-                    elif visited[node[0]] < visited[min_node[0]]:
+                    elif node.cumcost < min_node.cumcost :
+                        ind = i
                         min_node = node
             
             if min_node != None :
-                current_weight = visited[min_node[0]]
-                 
-                #Part to create point on real time
-                # if min_node in path : 
-                    # pid,w = path[min_node][-1]
-                # else :
-                    # pid = ''
-                # if out_point != None :
-                    # createPoint(out_point, min_node, scr, current_weight, nb_path, pid)
-                del nodes[min_node[0]]
+                nodes.pop(ind)
                 
-                for edge in graph.edges[min_node[0]]:
-                    weight = current_weight + graph.weight[(min_node[0], edge)]
-                    if edge[0] not in visited or weight < visited[edge]:
-                        visited[edge] = weight
-                        path[edge].append((min_node[0],weight))
+                # for node in nodes :
+                    # if node.id in min_node.edges :
+                        # weight = min_node.cumcost + node.cost
+                        # if node.cumcost == None or weight < node.cumcost :
+                            # node.cumcost = weight
+                            # path[node.id].append((min_node.id,weight))
+                for node in min_node.edges :
+                    weight = min_node.cumcost + node.cost
+                    if node.cumcost == None or weight < node.cumcost :
+                        node.cumcost = weight
+                        path[node.id].append((min_node.id,weight))
             
             else :
                 print 'no solution'
                 finish = None
                 break
         else :
+            finish = min_node.id
+            fin_weight = min_node.cumcost
             break
-    return path, beg_list, finish, visited
+    return path, beg_list, finish, fin_weight
                     
     
 def dijkstra(graph, init, end_list, scr, method, threshold, out_point, nb_path):
@@ -815,7 +826,7 @@ def dijkstra(graph, init, end_list, scr, method, threshold, out_point, nb_path):
                                 angle = math.fabs(az1-az2)
                             if angle < -180 :
                                 angle = angle + 360
-                            if angle > 180 :
+                            elif angle > 180 :
                                 angle = angle - 360
                             if math.fabs(angle) <= threshold :
                                 weight = current_weight + graph.weight[(min_node, edge)]
@@ -828,7 +839,7 @@ def dijkstra(graph, init, end_list, scr, method, threshold, out_point, nb_path):
                                 visited[edge] = weight
                                 path[edge].append((min_node,weight))
                                 
-                    if method == 'radius' :
+                    elif method == 'radius' :
                         if min_node in path : 
                             pid,w = path[min_node][-1]
                             x1,y1 = id_to_coord(pid)
@@ -1209,58 +1220,58 @@ def advanced_algo():
     
     print 'Along slope limit : (percent, ex : 10 for 10 %)'
     max_slope= int(input())
-    
-
-    
-    print 'Convert rast to graph...'
-    G = rast_to_adv_graph(in_array, res, nb_edge, max_slope, method, threshold)
-    print 'Convert rast to graph done'
-
-    print '%s nodes in the graph' % len(G.nodes)
-    sum_nodes=0
-    for node in G.nodes :
-        sum_nodes += len(G.edges[node])
-    print '%s edges in the graph' % sum_nodes
 
     #Begin to search least_cost path for each beg point
     i=0
-    time=Timer()
-    time.start()
+
     for beg_point in point_list :
         x,y = beg_point
         beg_id = "x"+str(x)+"y"+str(y)
+        
+        print 'Convert rast to graph...'
+        G = rast_to_adv_graph(in_array, res, nb_edge, max_slope, method, threshold)
+        print 'Convert rast to graph done'
+        
+        print '%s nodes in the graph' % len(G.nodes)
+        sum_nodes=0
+        for node in G.nodes :
+            sum_nodes += len(node.edges)
+        print '%s edges in the graph' % sum_nodes
+        
         print 'Searching the least cost path for %s' % beg_id
-        path, beg_list, end_id, visited = adv_dijkstra(G,beg_id,point_list)
+        
+        time=Timer()
+        time.start()
+        
+        path, beg_list, end_id, w = adv_dijkstra(G,beg_id,point_list)
+        
+        time.stop()
+        print 'processing Time :'
+        time.show()
+        
         print end_id
         i+=1
         print 'Searching the least cost path done'
         
-        filename="path"+str(i)+".txt"
-        file = open(filename,"w")
-        file.write(str(path))
-        file.close()
-        
-        leastCostPath = get_adv_lcp(beg_list,path,end_id, method,threshold)
+        if end_id != None :
+            filename="path"+str(i)+".txt"
+            file = open(filename,"w")
+            file.write(str(path))
+            file.close()
             
-        filename="lcp"+str(i)+".txt"
-        file = open(filename,"w")
-        file.write(str(leastCostPath))
-        file.close()
+            leastCostPath = get_adv_lcp(beg_list,path,end_id, method,threshold)
+                
+            filename="lcp"+str(i)+".txt"
+            file = open(filename,"w")
+            file.write(str(leastCostPath))
+            file.close()
+            
+            coord_list = ids_to_coord(leastCostPath,scr)
+            end_pt = leastCostPath[0]
+            create_ridge(out_line,coord_list,beg_id,end_pt,w)
+            print 'Create the least cost path as OGR LineString done'
         
-        filename="lcp"+str(i)+".txt"
-        file = open(filename,"w")
-        file.write(str(visited))
-        file.close()
-        
-        coord_list = ids_to_coord(leastCostPath,scr)
-        end_pt = leastCostPath[0] 
-        w = visited[end_id]
-        create_ridge(out_line,coord_list,beg_id,end_pt,w)
-        print 'Create the least cost path as OGR LineString done'
-        
-    time.stop()
-    print 'processing Time :'
-    time.show()
+
 
 def main() :
     print 'Standard or Advanced algo ? (s/a)'
