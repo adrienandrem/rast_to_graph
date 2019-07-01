@@ -30,7 +30,8 @@ if __name__ == "__main__":
     PARSER.add_argument('start', type=int, help='Start cell')
     PARSER.add_argument('end', type=int, help='End cell')
     PARSER.add_argument('elevation', help='DEM raster')
-    PARSER.add_argument('neighborhood', type=int, choices=[4, 8, 24, 48], help='Neighbor cell count')
+    PARSER.add_argument('neighborhood', type=int, choices=[4, 8, 24, 48],
+                        help='Neighbor cell count')
     ARGS = PARSER.parse_args()
 
     START, END = ARGS.start, ARGS.end
