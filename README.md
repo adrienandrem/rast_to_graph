@@ -14,4 +14,4 @@ Least cost path
 
 Least cost path with earthwork consideration
 
-    $ least_terr_cost.py points.shp elevation.tif path.shp path-points.shp
+    $ least_terr_cost.py 48 RADIUS=30 10 points.shp elevation.tif path.shp path-points.shp
