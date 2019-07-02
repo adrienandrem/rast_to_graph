@@ -14,6 +14,7 @@
         email                : peillet.seb@gmail.com
  ***************************************************************************/
 """
+
 import os
 import sys
 from collections import defaultdict
@@ -34,25 +35,26 @@ CURVATURE_OPTIONS = ['ANGLE', 'RADIUS']
 
 
 class Graph():
+
     def __init__(self):
-        self.nodes=set()
-        self.edges=defaultdict(list)
-        self.slope_info=defaultdict(list)
-        self.length = {}
-        self.slope = {}
-        self.weight = {}
+        self.nodes = set()
+        self.edges = defaultdict(list)
+        self.slope_info = defaultdict(list)
+        self.length = dict()
+        self.slope = dict()
+        self.weight = dict()
 
     def add_nodes(self, id):
         self.nodes.add(id)
 
     def add_edge(self, beg, end, w):
         self.edges[beg].append(end)
-        self.weight[(beg,end)] = w
+        self.weight[(beg, end)] = w
 
     def add_info(self, beg, end, length, slope):
         self.slope_info[beg].append(end)
-        self.length[(beg,end)] = length
-        self.slope[(beg,end)] = slope
+        self.length[(beg, end)] = length
+        self.slope[(beg, end)] = slope
 
 
 def output_prep(filename, src):
@@ -63,10 +65,10 @@ def output_prep(filename, src):
         oDriver.DeleteDataSource(filename)
     oDataSource=oDriver.CreateDataSource(filename)
 
-    #Create a LineString layer
+    # Create a LineString layer
     oLayer = oDataSource.CreateLayer("ridge",src,geom_type=ogr.wkbLineString)
 
-    #Add two fields to store the col_id and the pic_id
+    # Add two fields to store the col_id and the pic_id
     colID_field=ogr.FieldDefn("col_id",ogr.OFTString)
     picID_field=ogr.FieldDefn("pic_id",ogr.OFTString)
     weight_field=ogr.FieldDefn("weight",ogr.OFTReal)
@@ -84,7 +86,7 @@ def out_point_prep(filename, src):
         oDriver.DeleteDataSource(filename)
     oDataSource=oDriver.CreateDataSource(filename)
 
-    #Create a LineString layer
+    # Create a LineString layer
     oLayer = oDataSource.CreateLayer("point",src,geom_type=ogr.wkbPoint)
     ordreID_field=ogr.FieldDefn("ordre_id",ogr.OFTString)
     nodeID_field=ogr.FieldDefn("node_id",ogr.OFTString)
@@ -101,12 +103,11 @@ def out_point_prep(filename, src):
 
 
 def rast_to_graph(rastArray, res, nb_edge, max_slope):
-    G= Graph()
+    G = Graph()
 
+    [H, W] = rastArray.shape
 
-    [H,W] = rastArray.shape
-
-    #Shifts to get every edges from each nodes. For now, based on 48 direction like :
+    # Shifts to get every edges from each nodes. For now, based on 48 direction like:
     #     |   |   |   | 43|   | 42|   |   |   |
     #  ---|---|---|---|---|---|---|---|---|---|---
     #     |   |   |   |   |   |   |   |   |   |
@@ -131,7 +132,7 @@ def rast_to_graph(rastArray, res, nb_edge, max_slope):
 
 
 
-    #          px  py
+    #         px  py
     shift = [( 0,  0), #0
              (-1,  1), #1
              (-1,  0), #2
@@ -235,167 +236,167 @@ def rast_to_graph(rastArray, res, nb_edge, max_slope):
                             ]
 
     nb_edge+=1
-    #Loop over each pixel to convert it into nodes
-    for i in range(0,H) :
-        for j in range(0,W) :
-            #node id based on x and y pixel coordinates
+    # Loop over each pixel to convert it into nodes
+    for i in range(0,H):
+        for j in range(0,W):
+            # node id based on x and y pixel coordinates
             nodeName = "x"+str(i)+"y"+str(j)
             G.add_nodes(nodeName)
 
-    #Loop over each pixel again to create slope and length dictionnary
-    for i in range(0,H) :
-        for j in range(0,W) :
+    # Loop over each pixel again to create slope and length dictionnary
+    for i in range(0,H):
+        for j in range(0,W):
             nodeBeg = "x"+str(i)+"y"+str(j)
             nodeBegValue= rastArray[i,j]
-            for index in range(1,nb_edge) :
+            for index in range(1,nb_edge):
                 x,y=shift[index]
                 nodeEnd="x"+str(i+x)+"y"+str(j+y)
-                try :
+                try:
                     nodeEndValue= rastArray[i+x,j+y]
-                    #Calculate cost on length + addcost based on slope percent
-                    if index in [2,4,6,8] :
+                    # Calculate cost on length + addcost based on slope percent
+                    if index in [2,4,6,8]:
                         length = res
-                    elif index in [1,3,5,7] :
+                    elif index in [1,3,5,7]:
                         length = res*math.sqrt(2)
                     elif index in [9,11,13,15,17,19,21,23]:
                         length = res*math.sqrt(res)
-                    elif index in [10,14,18,22] :
+                    elif index in [10,14,18,22]:
                         length = 2*res*math.sqrt(2)
-                    elif index in [12,16,20,24] :
+                    elif index in [12,16,20,24]:
                         length = 2*res
-                    elif index in [25,28,29,32,33,36,37,40] :
+                    elif index in [25,28,29,32,33,36,37,40]:
                         length = res*math.sqrt(10)
-                    elif index in [26,27,30,31,34,35,38,39] :
+                    elif index in [26,27,30,31,34,35,38,39]:
                         length = res*math.sqrt(13)
-                    else :
+                    else:
                         length = res*math.sqrt(26)
                     slope = math.fabs(nodeEndValue-nodeBegValue)/length*100
                     # #max slope accepted in percent
                     # max_slope_wanted= 12
-                    # if slope <= max_slope_wanted :
+                    # if slope <= max_slope_wanted:
                     G.add_info(nodeBeg,nodeEnd,length,slope)
-                except IndexError :
+                except IndexError:
                     continue
 
-    for i in range(0,H) :
-        for j in range(0,W) :
+    for i in range(0,H):
+        for j in range(0,W):
             nodeBeg = "x"+str(i)+"y"+str(j)
-            for index in range(1,nb_edge) :
+            for index in range(1,nb_edge):
                 x,y=shift[index]
                 nodeEnd="x"+str(i+x)+"y"+str(j+y)
-                if (i+x) > 0 and (j+y) > 0 and (i+x) < H and (j+y) < W  :
-                    try :
+                if (i+x) > 0 and (j+y) > 0 and (i+x) < H and (j+y) < W:
+                    try:
                         length = G.length[(nodeBeg, nodeEnd)]
                         slope = G.slope[(nodeBeg, nodeEnd)]
-                        if slope <= max_slope :
+                        if slope <= max_slope:
                             coords_list = slope_calc_coord[index]
                             c_slope_list=[]
                             c_slope = None
                             count = 0
 
-                            for coords in coords_list :
+                            for coords in coords_list:
                                 lx,ly = coords[0]
                                 nodeLeft="x"+str(i+lx)+"y"+str(j+ly)
                                 rx,ry = coords[1]
                                 nodeRight="x"+str(i+rx)+"y"+str(j+ry)
                                 if (i+lx) > 0 and (j+ly) > 0 and (i+rx) > 0 and (j+ry) > 0 and\
-                                    (i+lx) < H and (j+ly) < W and (i+rx) < H and (j+ry) < W :
+                                    (i+lx) < H and (j+ly) < W and (i+rx) < H and (j+ry) < W:
                                     c_slope_list.append(G.slope[nodeLeft,nodeRight])
                                 count+=1
-                            if len(c_slope_list) == count and count != 0 :
+                            if len(c_slope_list) == count and count != 0:
                                 c_slope = sum(c_slope_list) / len(c_slope_list)
 
                                 pmax = 25
                                 pmin = 60
                                 larg = 4
 
-                                if c_slope < pmax :
+                                if c_slope < pmax:
                                     assise = larg/2
-                                else :
+                                else:
                                     assise = min(round((larg / 2*(1 + ((c_slope - pmax)/(pmin - pmax))**2)),2),larg)
                                 talus  = assise**2 *larg * (c_slope/100) / 2 /(larg - (c_slope/100))
                                 addcost = talus
 
                                 cost = length * addcost + length * 1
                                 G.add_edge(nodeBeg, nodeEnd, cost)
-                    except IndexError :
+                    except IndexError:
                         continue
 
     return G
 
 
 def dijkstra(graph, init, end_list, scr, method, threshold, out_point, nb_path):
-    #change the end point coordinates to graph id
+    # change the end point coordinates to graph id
     end_name=[]
-    for end_point in end_list :
+    for end_point in end_list:
         x,y=end_point
         end_id = "x"+str(x)+"y"+str(y)
-        if end_id != init :
+        if end_id != init:
             end_name.append(end_id)
 
-    #dict to get visited nodes and path
+    # dict to get visited nodes and path
     visited = {init: 0}
     path = defaultdict(list)
 
     nodes = set(graph.nodes)
 
-    #dijkstra algo
+    # dijkstra algo
     min_node = None
     while nodes:
         if min_node not in end_name:
             min_node = None
             for node in nodes:
                 if node in visited:
-                    if node in end_name :
+                    if node in end_name:
                         finish = node
                     if min_node is None:
                         min_node = node
                     elif visited[node] < visited[min_node]:
                         min_node = node
 
-            if min_node != None :
+            if min_node != None:
                 current_weight = visited[min_node]
-                if min_node in path :
+                if min_node in path:
                     pid,w = path[min_node][-1]
-                else :
+                else:
                     pid = ''
-                if out_point != None :
+                if out_point != None:
                     createPoint(out_point, min_node, scr, current_weight, nb_path, pid)
                 nodes.remove(min_node)
 
 
                 for edge in graph.edges[min_node]:
-                    if method == 'angle' :
-                        if min_node in path :
+                    if method == 'angle':
+                        if min_node in path:
                             pid,w = path[min_node][-1]
                             x1,y1 = id_to_coord(pid)
                             x2,y2 = id_to_coord(min_node)
                             x3,y3 = id_to_coord(edge)
                             az1 = math.degrees(math.atan2(x2 - x1, y2 - y1))
                             az2 = math.degrees(math.atan2(x3 - x2, y3 - y2))
-                            if az1 < 0 and az2 > 0 :
+                            if az1 < 0 and az2 > 0:
                                 angle = math.fabs(az1)+az2
-                            elif az1 > 0 and az2 < 0 :
+                            elif az1 > 0 and az2 < 0:
                                 angle = math.fabs(az2)+az1
-                            else :
+                            else:
                                 angle = math.fabs(az1-az2)
-                            if angle < -180 :
+                            if angle < -180:
                                 angle = angle + 360
-                            if angle > 180 :
+                            if angle > 180:
                                 angle = angle - 360
-                            if math.fabs(angle) <= threshold :
+                            if math.fabs(angle) <= threshold:
                                 weight = current_weight + graph.weight[(min_node, edge)]
                                 if edge not in visited or weight < visited[edge]:
                                     visited[edge] = weight
                                     path[edge].append((min_node,weight))
-                        else :
+                        else:
                             weight = current_weight + graph.weight[(min_node, edge)]
                             if edge not in visited or weight < visited[edge]:
                                 visited[edge] = weight
                                 path[edge].append((min_node,weight))
 
-                    if method == 'radius' :
-                        if min_node in path :
+                    if method == 'radius':
+                        if min_node in path:
                             pid,w = path[min_node][-1]
                             x1,y1 = id_to_coord(pid)
                             x2,y2 = id_to_coord(min_node)
@@ -407,10 +408,10 @@ def dijkstra(graph, init, end_list, scr, method, threshold, out_point, nb_path):
                                 mag_v2 = math.sqrt((x3-x2)**2+(y3-y2)**2)
 
 
-                                if mag_v1 < mag_v2 :
+                                if mag_v1 < mag_v2:
                                     x_v2 , y_v2 = (x3 - x2, y3 - y2)
                                     x3,y3 = x2+x_v2/mag_v2*mag_v1 ,y2+y_v2/mag_v2*mag_v1
-                                elif mag_v2 < mag_v1 :
+                                elif mag_v2 < mag_v1:
                                     x_v2 , y_v2 = (x1 - x2, y1 - y2)
                                     x1,y1 = x2+x_v2/mag_v1*mag_v2 ,y2+y_v2/mag_v1*mag_v2
 
@@ -428,42 +429,42 @@ def dijkstra(graph, init, end_list, scr, method, threshold, out_point, nb_path):
                                 f = [-y_v2_ort,x_v2_ort,c_v2_ort]
                                 x4 , y4, colineaire = equationResolve(e,f)
 
-                                if (x4 != None and y4 != None) :
+                                if (x4 != None and y4 != None):
                                     dist1 = math.sqrt((x1-x4)**2+(y1-y4)**2)*5
                                     dist2 = math.sqrt((x3-x4)**2+(y3-y4)**2)*5
 
-                                    if dist1 >= threshold :
+                                    if dist1 >= threshold:
                                         weight = current_weight + graph.weight[(min_node, edge)]
                                         if edge not in visited or weight < visited[edge]:
                                             visited[edge] = weight
                                             path[edge].append((min_node,weight))
-                                elif colineaire == True :
+                                elif colineaire == True:
                                     weight = current_weight + graph.weight[(min_node, edge)]
                                     if edge not in visited or weight < visited[edge]:
                                         visited[edge] = weight
                                         path[edge].append((min_node,weight))
-                        else :
+                        else:
                             weight = current_weight + graph.weight[(min_node, edge)]
                             if edge not in visited or weight < visited[edge]:
                                 visited[edge] = weight
                                 path[edge].append((min_node,weight))
-            else :
+            else:
                 print 'no solution'
                 finish = None
                 break
-        else :
+        else:
             break
     return path, finish, visited
 
 
-def equationResolve(e1,e2):
+def equationResolve(e1, e2):
     determinant=e1[0]*e2[1]-e1[1]*e2[0]
     x , y = None,None
     colineaire = False
     if determinant != 0:
         x=(e1[2]*e2[1]-e1[1]*e2[2])/determinant
         y=(e1[0]*e2[2]-e1[2]*e2[0])/determinant
-    else :
+    else:
         colineaire = True
     return x, y, colineaire
 
@@ -475,43 +476,43 @@ def id_to_coord(id):
     return px,py
 
 
-def ids_to_coord(lcp,gt):
-    #Reproj pixel coordinates to map coordinates
+def ids_to_coord(lcp, gt):
+    # Reproj pixel coordinates to map coordinates
     coord_list = []
-    for id in lcp :
+    for id in lcp:
         id=id[1:]
         px,py=id.split('y')
         px,py=int(px),int(py)
 
-        #Convert from pixel to map coordinates.
+        # Convert from pixel to map coordinates.
         mx = py * gt[1] + gt[0] + gt[1]/2
         my = px * gt[5] + gt[3] + gt[5]/2
 
         coord_list.append((mx,my))
-    #return the list of end point with x,y map coordinates
+    # return the list of end point with x,y map coordinates
     return coord_list
 
 
-def create_ridge(oFile,lcp, col, pic, weight) :
+def create_ridge(oFile, lcp, col, pic, weight):
     driver= ogr.GetDriverByName("ESRI Shapefile")
 
-    #Open the output shapefile
+    # Open the output shapefile
     iDataSource = driver.Open(oFile,1)
     iLayer = iDataSource.GetLayer()
     featDefn = iLayer.GetLayerDefn()
 
-    #Initiate feature
+    # Initiate feature
     feat = ogr.Feature(featDefn)
 
-    #Initiate feature geometry
+    # Initiate feature geometry
     line = ogr.Geometry(ogr.wkbLineString)
-    for coord in lcp :
+    for coord in lcp:
         x,y = coord
-        #Add new vertice to the linestring
+        # Add new vertice to the linestring
         line.AddPoint(x,y)
     feat.SetGeometry(line)
 
-    #Update the data field
+    # Update the data field
     feat.SetField("col_id",col)
     feat.SetField("pic_id",pic)
     feat.SetField("weight",weight)
@@ -523,15 +524,15 @@ def create_ridge(oFile,lcp, col, pic, weight) :
 def createPoint(oFile, node, gt, weight, nb_path, previous):
     driver= ogr.GetDriverByName("ESRI Shapefile")
 
-    #Open the output shapefile
+    # Open the output shapefile
     iDataSource = driver.Open(oFile,1)
     iLayer = iDataSource.GetLayer()
     featDefn = iLayer.GetLayerDefn()
     count = iLayer.GetFeatureCount()
-    #Initiate feature
+    # Initiate feature
     feat = ogr.Feature(featDefn)
     px,py=id_to_coord(node)
-    #Initiate feature geometry
+    # Initiate feature geometry
     point = ogr.Geometry(ogr.wkbPoint)
     mx = py * gt[1] + gt[0] + gt[1]/2
     my = px * gt[5] + gt[3] + gt[5]/2
@@ -544,7 +545,6 @@ def createPoint(oFile, node, gt, weight, nb_path, previous):
     feat.SetField('previous', previous)
     iLayer.CreateFeature(feat)
 
-    feature = None
     iDataSource = None
 
 
@@ -594,11 +594,11 @@ def main(points, elevation,
         i += 1
         print 'Searching the least cost path done'
 
-        if end_id != None:
+        if end_id ins not None:
             act = end_id
             leastCostPath = [end_id]
             print 'Create the least cost path as OGR LineString...'
-            while act !=beg_id:
+            while act != beg_id:
                 id, w = path[act][-1]
                 act = id
                 leastCostPath.append(id)
