@@ -89,7 +89,7 @@ def imp_init_point(filename, transform):
 
 def imp_end_point(filepath, transform):
     """Read points"""
-
+    ulx, x_res, __, uly, __, y_res = transform
     end_list = []
 
     # Open the end point shapefile to project each feature in pixel coordinates
@@ -100,10 +100,10 @@ def imp_end_point(filepath, transform):
         mx, my = geom.GetX(), geom.GetY()
 
         # Convert from map to pixel coordinates.
-        px = int((my - transform[3] + transform[5]/2)/transform[5])
-        py = int((mx - transform[0] + transform[1]/2)/transform[1])
+        px = (my - uly + y_res/2)/y_res
+        py = (mx - ulx + x_res/2)/x_res
 
-        end_list.append((px, py))
+        end_list.append((int(px), int(py)))
 
     # return the list of end point with x,y pixel coordinates + spatial ref to reproj point => id_to_coord()
     return end_list, layer.GetSpatialRef()

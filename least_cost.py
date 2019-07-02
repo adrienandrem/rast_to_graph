@@ -145,7 +145,7 @@ def dijkstra(graph, init, end_list, out_point, scr):
     end_name = []
     for end_point in end_list:
         x, y = end_point
-        end_id = "x"+str(x)+"y"+str(y)
+        end_id = "x" + str(x) + "y" + str(y)
         if end_id != init:
             end_name.append(end_id)
 
@@ -284,40 +284,40 @@ def create_ridge(oFile, lcp, col, pic):
     iDataSource = None
 
 
-def main(points, elevation, path, waypoints):
-    # Main function
+def main(point_file, elevation, path_file, waypoint_file):
+    """Main function"""
 
     # Load elevation raster
-    in_array, scr, proj, res = imp_raster(elevation)
+    raster_data, transform, proj, resolution = imp_raster(elevation)
 
     # Read points to link
-    beg_list, scr_shp = imp_init_point(points, scr)
-    logging.debug('%s points to link' % len(beg_list))
+    points, srs_shp = imp_init_point(point_file, transform)
+    logging.debug('%s points to link:\n%s', len(points), points)
 
     # Prepare outputfiles
-    out_line, out_point = output_prep(path, waypoints, scr_shp)
+    out_line, out_point = output_prep(path_file, waypoint_file, srs_shp)
 
     time = Timer()
     time.start()
 
     logging.info('Build graph from raster...')
-    G = rast_to_graph(in_array, res)
+    graph = rast_to_graph(raster_data, resolution)
     logging.info('Built graph (%s nodes, %s edges).'
-                 % (len(G.nodes), G.node_count()))
+                 % (len(graph.nodes), graph.node_count()))
 
-    # Begin to search least_cost path for each beg point
+    # Begin to search least_cost path for each start point
     i = 1
-    for beg_point in beg_list:
-        x, y = beg_point
-        beg_id = "x" + str(x) + "y" + str(y)
-        print 'Searching the least cost path for %s' % beg_id
-        path, end_id = dijkstra(G, beg_id, beg_list, out_point, scr)
-        print 'Searching the least cost path done'
+    for x, y in points:
+        start_id = "x" + str(x) + "y" + str(y)
+
+        logging.debug('Searching the least cost path for point((%s, %s), %s)', x, y, start_id)
+        path, end_id = dijkstra(graph, start_id, points, out_point, transform)
+        logging.debug('Searching the least cost path done')
 
         act = end_id
         leastCostPath = [end_id]
-        print 'Create the least cost path as OGR LineString...'
-        while act != beg_id:
+        logging.debug('Create the least cost path as OGR LineString...')
+        while act != start_id:
             id, w = path[act][-1]
             act = id
             leastCostPath.append(id)
@@ -326,10 +326,10 @@ def main(points, elevation, path, waypoints):
         file.write(str(leastCostPath))
         file.close()
         i += 1
-        coord_list = ids_to_coord(leastCostPath, scr)
+        coord_list = ids_to_coord(leastCostPath, transform)
 
-        create_ridge(out_line, coord_list, beg_id, end_id)
-        print 'Create the least cost path as OGR LineString done'
+        create_ridge(out_line, coord_list, start_id, end_id)
+        logging.debug('Created least cost path as OGR LineString.')
 
     time.stop()
     print 'Processing Time:'

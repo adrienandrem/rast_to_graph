@@ -6,8 +6,26 @@ Created on Mon Jul  1 20:36:46 2019
 """
 
 
-# Shifts to get every edges from each nodes. For now, based on 16 direction like:
+# Shifts to get every edges from each nodes
 #
+#   3 | 2 | 1 
+#  ---|---|---
+#   4 | 0 | 8 
+#  ---|---|---
+#   5 | 6 | 7 
+#
+#           px  py
+SHIFTS8 = [( 0,  0),
+           (-1,  1),
+           (-1,  0),
+           (-1, -1),
+           ( 0, -1),
+           ( 1, -1),
+           ( 1,  0),
+           ( 1,  1),
+           ( 0,  1)]
+
+
 #     | 11|   | 10|
 #  ---|---|---|---|---
 #   12| 3 | 2 | 1 | 9
@@ -17,6 +35,7 @@ Created on Mon Jul  1 20:36:46 2019
 #   13| 5 | 6 | 7 | 16
 #  ---|---|---|---|---
 #     | 14|   | 15|
+#
 #            px  py
 SHIFTS16 = [( 0,  0),
             (-1,  1),
