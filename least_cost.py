@@ -27,13 +27,9 @@ import logging
 
 import argparse
 
-from osgeo import gdal
 from osgeo import ogr
-from osgeo import osr
-from osgeo import gdal_array
-from osgeo import gdalconst
 
-from rast_to_graph import link_pattern
+from rast_to_graph import link_pattern, imp_raster
 
 
 class Timer():
@@ -80,21 +76,6 @@ class Graph():
             sum_nodes += len(self.edges[node])
 
         return sum_nodes
-
-
-def imp_raster(filename):
-    """Load raster data"""
-
-    # Open the input raster to retrieve values in an array
-    data = gdal.Open(filename, 1)
-    proj = data.GetProjection()
-    scr = data.GetGeoTransform()
-    resolution = scr[1]
-
-    band = data.GetRasterBand(1)
-    iArray = band.ReadAsArray()
-
-    return iArray, scr, proj, resolution
 
 
 def imp_init_point(filename, transform):
