@@ -33,6 +33,8 @@ from osgeo import osr
 from osgeo import gdal_array
 from osgeo import gdalconst
 
+from rast_to_graph import link_pattern
+
 
 class Timer():
   """Timer to show processing time"""
@@ -181,35 +183,7 @@ def rast_to_graph(rastArray, res):
 
     [H,W] = rastArray.shape
 
-    # Shifts to get every edges from each nodes. For now, based on 16 direction like:
-    #
-    #     | 11|   | 10|
-    #  ---|---|---|---|---
-    #   12| 3 | 2 | 1 | 9
-    #  ---|---|---|---|---
-    #     | 4 | 0 | 8 |
-    #  ---|---|---|---|---
-    #   13| 5 | 6 | 7 | 16
-    #  ---|---|---|---|---
-    #     | 14|   | 15|
-    #          px  py
-    shift = [( 0,  0),
-             (-1,  1),
-             (-1,  0),
-             (-1, -1),
-             ( 0, -1),
-             ( 1, -1),
-             ( 1,  0),
-             ( 1,  1),
-             ( 0,  1),
-             (-1,  2),
-             (-2,  1),
-             (-2, -1),
-             (-1, -2),
-             ( 1, -2),
-             ( 2, -1),
-             ( 2,  1),
-             ( 1,  2)]
+    SHIFTS = link_pattern.SHIFTS16
 
     # Loop over each pixel to convert it into nodes
     for i in range(0,H):
@@ -224,7 +198,7 @@ def rast_to_graph(rastArray, res):
             nodeBeg = "x"+str(i)+"y"+str(j)
             nodeBegValue= rastArray[i,j]
             for index in range(1,17):
-                x,y=shift[index]
+                x, y = SHIFTS[index]
                 nodeEnd="x"+str(i+x)+"y"+str(j+y)
                 try:
                     nodeEndValue= rastArray[i+x,j+y]
