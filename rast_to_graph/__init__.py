@@ -87,6 +87,28 @@ def imp_init_point(filename, transform):
     return init_list, layer.GetSpatialRef()
 
 
+def imp_end_point(filepath, transform):
+    """Read points"""
+
+    end_list = []
+
+    # Open the end point shapefile to project each feature in pixel coordinates
+    datasource = ogr.Open(filepath)
+    layer = datasource.GetLayer()
+    for feat in layer:
+        geom = feat.GetGeometryRef()
+        mx, my = geom.GetX(), geom.GetY()
+
+        # Convert from map to pixel coordinates.
+        px = int((my - transform[3] + transform[5]/2)/transform[5])
+        py = int((mx - transform[0] + transform[1]/2)/transform[1])
+
+        end_list.append((px, py))
+
+    # return the list of end point with x,y pixel coordinates + spatial ref to reproj point => id_to_coord()
+    return end_list, layer.GetSpatialRef()
+
+
 def shortest_path(start, end, elevation, neighborhood):
     """Computes the shortest path between 2 cells"""
 
