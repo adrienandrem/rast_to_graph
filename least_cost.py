@@ -23,6 +23,10 @@ from datetime import datetime
 
 from collections import defaultdict
 
+import logging
+
+import argparse
+
 from osgeo import gdal
 from osgeo import ogr
 from osgeo import osr
@@ -32,20 +36,20 @@ from osgeo import gdalconst
 
 class Timer():
   """Timer to show processing time"""
-  startTimes=dict()
-  stopTimes=dict()
+  startTimes = dict()
+  stopTimes = dict()
 
   @staticmethod
-  def start(key = 0):
+  def start(key=0):
     Timer.startTimes[key] = datetime.now()
     Timer.stopTimes[key] = None
 
   @staticmethod
-  def stop(key = 0):
+  def stop(key=0):
     Timer.stopTimes[key] = datetime.now()
 
   @staticmethod
-  def show(key = 0):
+  def show(key=0):
     if key in Timer.startTimes:
       if Timer.startTimes[key] is not None:
         if key in Timer.stopTimes:
@@ -57,59 +61,60 @@ class Timer():
 class Graph():
 
     def __init__(self):
-        self.nodes=set()
-        self.edges=defaultdict(list)
-        self.weight = {}
+        self.nodes = set()
+        self.edges = defaultdict(list)
+        self.weight = dict()
 
     def add_nodes(self, id):
         self.nodes.add(id)
 
     def add_edge(self, beg, end, w):
         self.edges[beg].append(end)
-        self.weight[(beg,end)] = w
+        self.weight[(beg, end)] = w
+
+    def node_count(self):
+        sum_nodes = 0
+        for node in self.nodes:
+            sum_nodes += len(self.edges[node])
+
+        return sum_nodes
 
 
-def imp_raster():
+def imp_raster(filename):
     """Load raster data"""
 
-    print 'Enter input raster path:'
-    iFile_name=raw_input()
-
     # Open the input raster to retrieve values in an array
-    data = gdal.Open(iFile_name,1)
+    data = gdal.Open(filename, 1)
     proj = data.GetProjection()
     scr = data.GetGeoTransform()
     resolution = scr[1]
 
-    band=data.GetRasterBand(1)
-    iArray=band.ReadAsArray()
+    band = data.GetRasterBand(1)
+    iArray = band.ReadAsArray()
 
     return iArray, scr, proj, resolution
 
 
-def imp_init_point(gt):
+def imp_init_point(filename, transform):
     """Read points"""
-
-    print 'ENTER input init point path'
-    iFile_name=raw_input()
 
     init_list = []
 
     # Open the init point shapefile to project each feature in pixel coordinates
-    ds=ogr.Open(iFile_name)
-    lyr=ds.GetLayer()
-    src = lyr.GetSpatialRef()
-    for feat in lyr:
+    datasource = ogr.Open(filename)
+    layer = datasource.GetLayer()
+    for feat in layer:
         geom = feat.GetGeometryRef()
-        mx,my=geom.GetX(), geom.GetY()
+        mx, my = geom.GetX(), geom.GetY()
 
         # Convert from map to pixel coordinates.
-        px = int(( my - gt[3] + gt[5]/2) / gt[5])
-        py = int(((mx - gt[0] - gt[1]/2) / gt[1]))
-        init_list.append((px,py))
+        px = int(( my - transform[3] + transform[5]/2)/transform[5])
+        py = int(((mx - transform[0] - transform[1]/2)/transform[1]))
 
-    # return the list of init point with x,y pixel coordinates
-    return init_list, src
+        init_list.append((px, py))
+
+    # return the list of init point with x, y pixel coordinates
+    return init_list, layer.GetSpatialRef()
 
 
 def imp_end_point(gt):
@@ -136,35 +141,35 @@ def imp_end_point(gt):
     return end_list, src
 
 
-def output_prep(src):
+def output_prep(filename, filename_wpt, src):
     """Initialize the output shapefile"""
 
-    print 'Output path shapefile path:'
-    oLineFile_name=raw_input()
-    oDriver=ogr.GetDriverByName("ESRI Shapefile")
+    # Output path shapefile path
+    oLineFile_name = filename
+    oDriver = ogr.GetDriverByName("ESRI Shapefile")
     if os.path.exists(oLineFile_name):
         oDriver.DeleteDataSource(oLineFile_name)
-    oDataSource=oDriver.CreateDataSource(oLineFile_name)
+    oDataSource = oDriver.CreateDataSource(oLineFile_name)
 
     # Create a LineString layer
-    oLayer = oDataSource.CreateLayer("ridge",src,geom_type=ogr.wkbLineString)
+    oLayer = oDataSource.CreateLayer("ridge", src, geom_type=ogr.wkbLineString)
 
     # Add two fields to store the col_id and the pic_id
-    colID_field=ogr.FieldDefn("col_id",ogr.OFTString)
-    picID_field=ogr.FieldDefn("pic_id",ogr.OFTString)
+    colID_field = ogr.FieldDefn("col_id", ogr.OFTString)
+    picID_field = ogr.FieldDefn("pic_id", ogr.OFTString)
     oLayer.CreateField(colID_field)
     oLayer.CreateField(picID_field)
 
-    print 'Output path shapefile path:'
-    oPointFile_name=raw_input()
-    oDriver=ogr.GetDriverByName("ESRI Shapefile")
+    # Output path shapefile path
+    oPointFile_name = filename_wpt
+    oDriver = ogr.GetDriverByName("ESRI Shapefile")
     if os.path.exists(oPointFile_name):
         oDriver.DeleteDataSource(oPointFile_name)
-    oDataSource=oDriver.CreateDataSource(oPointFile_name)
+    oDataSource = oDriver.CreateDataSource(oPointFile_name)
 
     # Create a LineString layer
-    oLayer = oDataSource.CreateLayer("point",src,geom_type=ogr.wkbPoint)
-    ordreID_field=ogr.FieldDefn("ordre_id",ogr.OFTString)
+    oLayer = oDataSource.CreateLayer("point", src, geom_type=ogr.wkbPoint)
+    ordreID_field = ogr.FieldDefn("ordre_id", ogr.OFTString)
     oLayer.CreateField(ordreID_field)
 
     return oLineFile_name, oPointFile_name
@@ -389,66 +394,81 @@ def create_ridge(oFile, lcp, col, pic):
     iDataSource = None
 
 
-def main():
+def main(points, elevation, path, waypoints):
     # Main function
 
-    print 'Import raster...'
-    in_array, scr, proj, res = imp_raster()
-    print 'Imported raster.'
+    # Load elevation raster
+    in_array, scr, proj, res = imp_raster(elevation)
 
-    print 'Import vector...'
-    beg_list, scr_shp = imp_init_point(scr)
-    print '%s feature(s)' % len(beg_list)
-    print 'Imported vector.'
+    # Read points to link
+    beg_list, scr_shp = imp_init_point(points, scr)
+    logging.debug('%s points to link' % len(beg_list))
 
-    print 'Name vector output...'
-    out_line,out_point=output_prep(scr_shp)
+    # Prepare outputfiles
+    out_line, out_point = output_prep(path, waypoints, scr_shp)
 
-    time=Timer()
+    time = Timer()
     time.start()
 
-    print 'Convert rast to graph...'
+    logging.info('Build graph from raster...')
     G = rast_to_graph(in_array, res)
-    print 'Converted rast to graph.'
-
-    print '%s nodes in the graph.' % len(G.nodes)
-    sum_nodes=0
-    for node in G.nodes:
-        sum_nodes += len(G.edges[node])
-    print '%s edges in the graph' % sum_nodes
+    logging.info('Built graph (%s nodes, %s edges).'
+                 % (len(G.nodes), G.node_count()))
 
     # Begin to search least_cost path for each beg point
     i = 1
     for beg_point in beg_list:
-        x,y = beg_point
-        beg_id = "x"+str(x)+"y"+str(y)
+        x, y = beg_point
+        beg_id = "x" + str(x) + "y" + str(y)
         print 'Searching the least cost path for %s' % beg_id
-        path, end_id = dijkstra(G,beg_id,beg_list, out_point, scr)
+        path, end_id = dijkstra(G, beg_id, beg_list, out_point, scr)
         print 'Searching the least cost path done'
 
-        act=end_id
-        leastCostPath=[end_id]
+        act = end_id
+        leastCostPath = [end_id]
         print 'Create the least cost path as OGR LineString...'
-        while act!=beg_id:
-            id,w=path[act][-1]
-            act=id
+        while act != beg_id:
+            id, w = path[act][-1]
+            act = id
             leastCostPath.append(id)
-        filename="lcp"+str(i)+".txt"
+        filename = "lcp" + str(i) + ".txt"
         file = open(filename,"w")
         file.write(str(leastCostPath))
         file.close()
-        i+=1
-        coord_list = ids_to_coord(leastCostPath,scr)
+        i += 1
+        coord_list = ids_to_coord(leastCostPath, scr)
 
-        create_ridge(out_line,coord_list,beg_id,end_id)
+        create_ridge(out_line, coord_list, beg_id, end_id)
         print 'Create the least cost path as OGR LineString done'
 
     time.stop()
     print 'Processing Time:'
     time.show()
 
-    return 0
-
 
 if __name__ == '__main__':
-    sys.exit(main())
+
+    PARSER = argparse.ArgumentParser(prog='least_cost', usage='%(prog)s [options]')
+    PARSER.add_argument('points', help='Shapefile of points to link')
+    PARSER.add_argument('elevation', help='Elevation raster file')
+    PARSER.add_argument('path', help='Output least cost path shapefile')
+    PARSER.add_argument('waypoints',
+                        help='Output least cost path points shapefile')
+    ARGS = PARSER.parse_args()
+
+    POINTS = ARGS.points
+    ELEVATION = ARGS.elevation
+    PATH = ARGS.path
+    WAYPOINTS = ARGS.waypoints
+
+    # Check input data
+    if not os.path.isfile(POINTS):
+        logging.error('Error reading file: %s', POINTS)
+        sys.exit(1)
+    if not os.path.isfile(ELEVATION):
+        logging.error('Error reading file: %s', ELEVATION)
+        sys.exit(1)
+
+    main(POINTS, ELEVATION, PATH, WAYPOINTS)
+
+    sys.exit(0)
