@@ -19,7 +19,6 @@ import os
 import sys
 
 import math
-from datetime import datetime
 
 from collections import defaultdict
 
@@ -29,7 +28,8 @@ import argparse
 
 from osgeo import ogr
 
-from rast_to_graph import link_pattern, imp_raster
+from rast_to_graph import link_pattern
+from rast_to_graph import imp_raster, imp_init_point
 from rast_to_graph import Timer
 
 

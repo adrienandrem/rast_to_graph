@@ -5,7 +5,7 @@
  least_cost.py
 
  Perform a least cost path with a raster conversion in graph
- 
+
  Need : OsGeo library
                               -------------------
         begin                : 2017-07-07
@@ -16,39 +16,24 @@
 """
 import os
 import sys
-from osgeo import gdal
-from osgeo import ogr
-from osgeo import osr
-from osgeo import gdal_array
-from osgeo import gdalconst
 from collections import defaultdict
-from datetime import datetime
+
 import math
 
-#Timer to show processing time
-class Timer():
-  startTimes=dict()
-  stopTimes=dict()
+from osgeo import ogr
 
-  @staticmethod
-  def start(key = 0):
-    Timer.startTimes[key] = datetime.now()
-    Timer.stopTimes[key] = None
+import logging
 
-  @staticmethod
-  def stop(key = 0):
-    Timer.stopTimes[key] = datetime.now()
+import argparse
 
-  @staticmethod
-  def show(key = 0):
-    if key in Timer.startTimes:
-      if Timer.startTimes[key] is not None:
-        if key in Timer.stopTimes:
-          if Timer.stopTimes[key] is not None:
-            delta = Timer.stopTimes[key] - Timer.startTimes[key]
-            print delta
+from rast_to_graph import imp_raster, imp_init_point
+from rast_to_graph import curvature_option, Timer
 
-class Graph ():
+
+CURVATURE_OPTIONS = ['ANGLE', 'RADIUS']
+
+
+class Graph():
     def __init__(self):
         self.nodes=set()
         self.edges=defaultdict(list)
@@ -56,70 +41,31 @@ class Graph ():
         self.length = {}
         self.slope = {}
         self.weight = {}
-    
+
     def add_nodes(self, id):
         self.nodes.add(id)
-    
+
     def add_edge(self, beg, end, w):
         self.edges[beg].append(end)
         self.weight[(beg,end)] = w
-        
+
     def add_info(self, beg, end, length, slope):
         self.slope_info[beg].append(end)
         self.length[(beg,end)] = length
         self.slope[(beg,end)] = slope
-        
-    
-def imp_raster():
-    print 'ENTER input raster path'
-    iFile_name=raw_input()
 
-    # Open the input raster to retrieve values in an array
-    data = gdal.Open(iFile_name,1)
-    proj = data.GetProjection()
-    scr = data.GetGeoTransform()
-    resolution = scr[1]
 
-    band=data.GetRasterBand(1)
-    iArray=band.ReadAsArray()
-    
-    return iArray, scr, proj, resolution
+def output_prep(filename, src):
+    """Initialize the shapefile output"""
 
-def imp_init_point(gt):
-    print 'ENTER input init point path'
-    iFile_name=raw_input()
-    
-    init_list = []
-    
-    #Open the init point shapefile to project each feature in pixel coordinates
-    ds=ogr.Open(iFile_name)
-    lyr=ds.GetLayer()
-    src = lyr.GetSpatialRef()
-    for feat in lyr:
-        geom = feat.GetGeometryRef()
-        mx,my=geom.GetX(), geom.GetY()
-
-        #Convert from map to pixel coordinates.
-        px = int(( my - gt[3] + gt[5]/2) / gt[5])
-        py = int(((mx - gt[0] - gt[1]/2) / gt[1]))
-        init_list.append((px,py))
-    
-    #return the list of init point with x,y pixel coordinates
-    return init_list, src
-    
-def output_prep(src):
-    #Initialize the shapefile output
-    
-    print 'path output :'
-    oLineFile_name=raw_input()
     oDriver=ogr.GetDriverByName("ESRI Shapefile")
-    if os.path.exists(oLineFile_name):
-        oDriver.DeleteDataSource(oLineFile_name)
-    oDataSource=oDriver.CreateDataSource(oLineFile_name)
-    
+    if os.path.exists(filename):
+        oDriver.DeleteDataSource(filename)
+    oDataSource=oDriver.CreateDataSource(filename)
+
     #Create a LineString layer
     oLayer = oDataSource.CreateLayer("ridge",src,geom_type=ogr.wkbLineString)
-    
+
     #Add two fields to store the col_id and the pic_id
     colID_field=ogr.FieldDefn("col_id",ogr.OFTString)
     picID_field=ogr.FieldDefn("pic_id",ogr.OFTString)
@@ -127,17 +73,17 @@ def output_prep(src):
     oLayer.CreateField(colID_field)
     oLayer.CreateField(picID_field)
     oLayer.CreateField(weight_field)
-    
-    return oLineFile_name
- 
-def out_point_prep(src):
-    print 'point output :'
-    oPointFile_name = raw_input()
+
+    return filename
+
+
+def out_point_prep(filename, src):
+
     oDriver=ogr.GetDriverByName("ESRI Shapefile")
-    if os.path.exists(oPointFile_name):
-        oDriver.DeleteDataSource(oPointFile_name)
-    oDataSource=oDriver.CreateDataSource(oPointFile_name)
-    
+    if os.path.exists(filename):
+        oDriver.DeleteDataSource(filename)
+    oDataSource=oDriver.CreateDataSource(filename)
+
     #Create a LineString layer
     oLayer = oDataSource.CreateLayer("point",src,geom_type=ogr.wkbPoint)
     ordreID_field=ogr.FieldDefn("ordre_id",ogr.OFTString)
@@ -150,15 +96,16 @@ def out_point_prep(src):
     oLayer.CreateField(weightID_field)
     oLayer.CreateField(pathID_field)
     oLayer.CreateField(previous_field)
-    
-    return oPointFile_name
-    
-def rast_to_graph(rastArray, res, nb_edge, max_slope) :
+
+    return filename
+
+
+def rast_to_graph(rastArray, res, nb_edge, max_slope):
     G= Graph()
-    
-    
+
+
     [H,W] = rastArray.shape
-    
+
     #Shifts to get every edges from each nodes. For now, based on 48 direction like :
     #     |   |   |   | 43|   | 42|   |   |   |
     #  ---|---|---|---|---|---|---|---|---|---|---
@@ -182,8 +129,8 @@ def rast_to_graph(rastArray, res, nb_edge, max_slope) :
     #  ---|---|---|---|---|---|---|---|---|---|---
     #     |   |   |   | 46|   | 47|   |   |   |
 
-    
-    
+
+
     #          px  py
     shift = [( 0,  0), #0
              (-1,  1), #1
@@ -235,7 +182,7 @@ def rast_to_graph(rastArray, res, nb_edge, max_slope) :
              ( 5,  1), #47
              ( 1,  5)  #48
              ]
-             
+
     slope_calc_coord  =    [( 0,  0),                                                                                                       #0
                             ([ [shift[2]  ,  shift[8]] ]),                                                                                  #1
                             ([ [shift[4]  ,  shift[8]] , [shift[3]  ,  shift[1]] ]),                                                        #2
@@ -285,7 +232,7 @@ def rast_to_graph(rastArray, res, nb_edge, max_slope) :
                             ([ [shift[22]  ,  shift[33]] , [shift[40]  ,  shift[16]] , [shift[38],  shift[34]]  ]),                           #46
                             ([ [shift[24]  ,  shift[33]] , [shift[40]  ,  shift[18]] , [shift[39],  shift[35]]  ]),                           #47
                             ([ [shift[10]  ,  shift[37]] , [shift[28]  ,  shift[20]] , [shift[26],  shift[38]]  ])                            #48
-                            ] 
+                            ]
 
     nb_edge+=1
     #Loop over each pixel to convert it into nodes
@@ -295,7 +242,7 @@ def rast_to_graph(rastArray, res, nb_edge, max_slope) :
             nodeName = "x"+str(i)+"y"+str(j)
             G.add_nodes(nodeName)
 
-    #Loop over each pixel again to create slope and length dictionnary    
+    #Loop over each pixel again to create slope and length dictionnary
     for i in range(0,H) :
         for j in range(0,W) :
             nodeBeg = "x"+str(i)+"y"+str(j)
@@ -329,7 +276,7 @@ def rast_to_graph(rastArray, res, nb_edge, max_slope) :
                     G.add_info(nodeBeg,nodeEnd,length,slope)
                 except IndexError :
                     continue
-    
+
     for i in range(0,H) :
         for j in range(0,W) :
             nodeBeg = "x"+str(i)+"y"+str(j)
@@ -345,7 +292,7 @@ def rast_to_graph(rastArray, res, nb_edge, max_slope) :
                             c_slope_list=[]
                             c_slope = None
                             count = 0
-                            
+
                             for coords in coords_list :
                                 lx,ly = coords[0]
                                 nodeLeft="x"+str(i+lx)+"y"+str(j+ly)
@@ -357,25 +304,26 @@ def rast_to_graph(rastArray, res, nb_edge, max_slope) :
                                 count+=1
                             if len(c_slope_list) == count and count != 0 :
                                 c_slope = sum(c_slope_list) / len(c_slope_list)
-                                
+
                                 pmax = 25
                                 pmin = 60
                                 larg = 4
-                                
+
                                 if c_slope < pmax :
                                     assise = larg/2
                                 else :
                                     assise = min(round((larg / 2*(1 + ((c_slope - pmax)/(pmin - pmax))**2)),2),larg)
                                 talus  = assise**2 *larg * (c_slope/100) / 2 /(larg - (c_slope/100))
                                 addcost = talus
-                                
+
                                 cost = length * addcost + length * 1
                                 G.add_edge(nodeBeg, nodeEnd, cost)
                     except IndexError :
                         continue
-    
+
     return G
-    
+
+
 def dijkstra(graph, init, end_list, scr, method, threshold, out_point, nb_path):
     #change the end point coordinates to graph id
     end_name=[]
@@ -384,7 +332,7 @@ def dijkstra(graph, init, end_list, scr, method, threshold, out_point, nb_path):
         end_id = "x"+str(x)+"y"+str(y)
         if end_id != init :
             end_name.append(end_id)
-    
+
     #dict to get visited nodes and path
     visited = {init: 0}
     path = defaultdict(list)
@@ -393,7 +341,7 @@ def dijkstra(graph, init, end_list, scr, method, threshold, out_point, nb_path):
 
     #dijkstra algo
     min_node = None
-    while nodes: 
+    while nodes:
         if min_node not in end_name:
             min_node = None
             for node in nodes:
@@ -404,21 +352,21 @@ def dijkstra(graph, init, end_list, scr, method, threshold, out_point, nb_path):
                         min_node = node
                     elif visited[node] < visited[min_node]:
                         min_node = node
-            
+
             if min_node != None :
                 current_weight = visited[min_node]
-                if min_node in path : 
+                if min_node in path :
                     pid,w = path[min_node][-1]
                 else :
                     pid = ''
                 if out_point != None :
                     createPoint(out_point, min_node, scr, current_weight, nb_path, pid)
                 nodes.remove(min_node)
-                
-                
+
+
                 for edge in graph.edges[min_node]:
                     if method == 'angle' :
-                        if min_node in path : 
+                        if min_node in path :
                             pid,w = path[min_node][-1]
                             x1,y1 = id_to_coord(pid)
                             x2,y2 = id_to_coord(min_node)
@@ -445,45 +393,45 @@ def dijkstra(graph, init, end_list, scr, method, threshold, out_point, nb_path):
                             if edge not in visited or weight < visited[edge]:
                                 visited[edge] = weight
                                 path[edge].append((min_node,weight))
-                                
+
                     if method == 'radius' :
-                        if min_node in path : 
+                        if min_node in path :
                             pid,w = path[min_node][-1]
                             x1,y1 = id_to_coord(pid)
                             x2,y2 = id_to_coord(min_node)
                             x3,y3 = id_to_coord(edge)
-                            
+
                             if min(x1,x3) <= x2 <= max(x1,x3) and min(y1,y3) <= y2 <= max(y1,y3):
-                            
+
                                 mag_v1 = math.sqrt((x1-x2)**2+(y1-y2)**2)
                                 mag_v2 = math.sqrt((x3-x2)**2+(y3-y2)**2)
-                                
-                                
+
+
                                 if mag_v1 < mag_v2 :
                                     x_v2 , y_v2 = (x3 - x2, y3 - y2)
                                     x3,y3 = x2+x_v2/mag_v2*mag_v1 ,y2+y_v2/mag_v2*mag_v1
                                 elif mag_v2 < mag_v1 :
                                     x_v2 , y_v2 = (x1 - x2, y1 - y2)
                                     x1,y1 = x2+x_v2/mag_v1*mag_v2 ,y2+y_v2/mag_v1*mag_v2
-                                    
+
                                 x_v1 , y_v1 = (x2 - x1, y2 - y1)
                                 x_v1_ort , y_v1_ort = y_v1 , -x_v1
                                 x_v2 , y_v2 = (x3 - x2, y3 - y2)
                                 x_v2_ort , y_v2_ort = y_v2 , -x_v2
-                                
+
                                 c_v1_ort = y_v1_ort*x1+(-x_v1_ort)*y1
                                 c_v1_ort = -c_v1_ort
                                 c_v2_ort = y_v2_ort*x3+(-x_v2_ort)*y3
                                 c_v2_ort = -c_v2_ort
-                                
+
                                 e = [-y_v1_ort,x_v1_ort,c_v1_ort]
                                 f = [-y_v2_ort,x_v2_ort,c_v2_ort]
                                 x4 , y4, colineaire = equationResolve(e,f)
-         
+
                                 if (x4 != None and y4 != None) :
                                     dist1 = math.sqrt((x1-x4)**2+(y1-y4)**2)*5
                                     dist2 = math.sqrt((x3-x4)**2+(y3-y4)**2)*5
-                                    
+
                                     if dist1 >= threshold :
                                         weight = current_weight + graph.weight[(min_node, edge)]
                                         if edge not in visited or weight < visited[edge]:
@@ -518,12 +466,14 @@ def equationResolve(e1,e2):
     else :
         colineaire = True
     return x, y, colineaire
-    
+
+
 def id_to_coord(id):
     id=id[1:]
     px,py=id.split('y')
     px,py=int(px),int(py)
     return px,py
+
 
 def ids_to_coord(lcp,gt):
     #Reproj pixel coordinates to map coordinates
@@ -532,26 +482,27 @@ def ids_to_coord(lcp,gt):
         id=id[1:]
         px,py=id.split('y')
         px,py=int(px),int(py)
-        
+
         #Convert from pixel to map coordinates.
         mx = py * gt[1] + gt[0] + gt[1]/2
         my = px * gt[5] + gt[3] + gt[5]/2
-        
+
         coord_list.append((mx,my))
     #return the list of end point with x,y map coordinates
     return coord_list
 
+
 def create_ridge(oFile,lcp, col, pic, weight) :
     driver= ogr.GetDriverByName("ESRI Shapefile")
-    
+
     #Open the output shapefile
     iDataSource = driver.Open(oFile,1)
     iLayer = iDataSource.GetLayer()
     featDefn = iLayer.GetLayerDefn()
-    
+
     #Initiate feature
     feat = ogr.Feature(featDefn)
-    
+
     #Initiate feature geometry
     line = ogr.Geometry(ogr.wkbLineString)
     for coord in lcp :
@@ -559,7 +510,7 @@ def create_ridge(oFile,lcp, col, pic, weight) :
         #Add new vertice to the linestring
         line.AddPoint(x,y)
     feat.SetGeometry(line)
-    
+
     #Update the data field
     feat.SetField("col_id",col)
     feat.SetField("pic_id",pic)
@@ -567,10 +518,11 @@ def create_ridge(oFile,lcp, col, pic, weight) :
     iLayer.CreateFeature(feat)
     feature = None
     iDataSource = None
-  
-def createPoint(oFile, node, gt, weight, nb_path, previous) :
+
+
+def createPoint(oFile, node, gt, weight, nb_path, previous):
     driver= ogr.GetDriverByName("ESRI Shapefile")
-    
+
     #Open the output shapefile
     iDataSource = driver.Open(oFile,1)
     iLayer = iDataSource.GetLayer()
@@ -591,105 +543,122 @@ def createPoint(oFile, node, gt, weight, nb_path, previous) :
     feat.SetField('path_id', nb_path)
     feat.SetField('previous', previous)
     iLayer.CreateFeature(feat)
-    
-    
+
     feature = None
     iDataSource = None
-  
-def main() :
-    #Main function
-    print 'Import raster...'
-    in_array, scr, proj, res = imp_raster()
-    print 'Import raster done'
-    
-    
-    print 'Import vector ...'
-    beg_list, scr_shp = imp_init_point(scr)
-    print '%s feature(s)' % len(beg_list)
-    print 'Import vector done'
 
-    print 'Name vector output...'
-    print 'path :'
-    out_line=output_prep(scr_shp)
-    print 'Get points process history ? (y/n)'
-    point_save = raw_input()
-    if point_save == 'y' :
-        out_point = out_point_prep(scr_shp)
-    else :
+
+def main(points, elevation,
+         links, curvature, slope_max,
+         path, waypoints):
+    """Main function"""
+
+    # Load elevation raster
+    in_array, scr, proj, res = imp_raster(elevation)
+
+    # Read points to link
+    beg_list, scr_shp = imp_init_point(points, scr)
+    logging.debug('%s points to link', len(beg_list))
+
+    # Prepare output files
+    out_line = output_prep(path, scr_shp)
+
+    if waypoints:
+        out_point = out_point_prep(waypoints, scr_shp)
+    else:
         out_point = None
-    
-    print 'Edges model : (8/24/40/48)'
-    nb_edge = int(input())
-    if nb_edge not in [8,24,40,48] :
-       print "Wrong edges model, %s edges model does'nt exist" % str(nb_edge)
-    
-    print 'Method a/r (angle/radius) :'
-    method = raw_input()
-    if method == 'a' or method == 'angle' :
-        method = 'angle'
-        print "Angle max (%) :"
-        threshold = int(input())
-    elif method == 'r' or method == 'radius' :
-        method = 'radius'
-        print "Radius min (m) :"
-        threshold = int(input())
-    else :
-        print "Wrong method"
-        exit()
-    
-    print 'Along slope limit : (percent, ex : 10 for 10 %)'
-    max_slope= int(input())
-    
-    time=Timer()
+
+    method, threshold = curvature
+
+    # Processing
+    time = Timer()
     time.start()
-    
+
     print 'Convert rast to graph...'
-    G = rast_to_graph(in_array, res, nb_edge, max_slope)
+    G = rast_to_graph(in_array, res, links, slope_max)
     print 'Convert rast to graph done'
 
     print '%s nodes in the graph' % len(G.nodes)
-    sum_nodes=0
-    for node in G.nodes :
+    sum_nodes = 0
+    for node in G.nodes:
         sum_nodes += len(G.edges[node])
     print '%s edges in the graph' % sum_nodes
 
-    #Begin to search least_cost path for each beg point
-    i=0
-    for beg_point in beg_list :
-        x,y = beg_point
-        beg_id = "x"+str(x)+"y"+str(y)
+    # Begin to search least_cost path for each beg point
+    i = 0
+    for beg_point in beg_list:
+        x, y = beg_point
+        beg_id = "x" + str(x) + "y" + str(y)
         print 'Searching the least cost path for %s' % beg_id
-        path, end_id, visited = dijkstra(G,beg_id,beg_list, scr, method, threshold, out_point,i)
-        i+=1
+        path, end_id, visited = dijkstra(G, beg_id, beg_list, scr, method, threshold, out_point, i)
+        i += 1
         print 'Searching the least cost path done'
-        
-        if end_id != None :
-            act=end_id
-            leastCostPath=[end_id]
+
+        if end_id != None:
+            act = end_id
+            leastCostPath = [end_id]
             print 'Create the least cost path as OGR LineString...'
-            while act!=beg_id :
-                id,w=path[act][-1]
-                act=id
+            while act !=beg_id:
+                id, w = path[act][-1]
+                act = id
                 leastCostPath.append(id)
-            
-            filename="lcp"+str(i)+".txt"
-            file = open(filename,"w")
+
+            filename = "lcp" + str(i) + ".txt"
+            file = open(filename, 'w')
             file.write(str(leastCostPath))
             file.close()
-            
-            filename="path"+str(i)+".txt"
-            file = open(filename,"w")
+
+            filename = "path" + str(i) + ".txt"
+            file = open(filename, 'w')
             file.write(str(path))
             file.close()
-            
-            coord_list = ids_to_coord(leastCostPath,scr)
-            id,w=path[end_id][-1]
-            create_ridge(out_line,coord_list,beg_id,end_id,w)
+
+            coord_list = ids_to_coord(leastCostPath, scr)
+            id, w = path[end_id][-1]
+            create_ridge(out_line, coord_list, beg_id, end_id, w)
             print 'Create the least cost path as OGR LineString done'
-        
+
     time.stop()
-    print 'processing Time :'
+    print 'Processing Time:'
     time.show()
-            
+
+
 if __name__ == '__main__':
-    sys.exit(main())
+
+    PARSER = argparse.ArgumentParser(prog='least_terr_cost', usage='%(prog)s [options]')
+    PARSER.add_argument('links', type=int, choices=[8, 24, 40, 48])
+    PARSER.add_argument('curvature',
+                        help='Maximum slope (RADIUS=30, ANGLE=45)')
+    PARSER.add_argument('slope', type=float, help='Maximum slope (%)')
+    PARSER.add_argument('points', help='Shapefile of points to link')
+    PARSER.add_argument('elevation', help='Elevation raster file')
+    PARSER.add_argument('path', help='Output least cost path shapefile')
+    PARSER.add_argument('waypoints',
+                        help='Output least cost path points shapefile')
+    ARGS = PARSER.parse_args()
+
+    POINTS = ARGS.points
+    ELEVATION = ARGS.elevation
+
+    LINKS = ARGS.links
+    CURVATURE = ARGS.curvature
+    SLOPE = ARGS.slope
+
+    PATH = ARGS.path
+    WAYPOINTS = ARGS.waypoints
+
+    # Check input data
+    if not os.path.isfile(POINTS):
+        logging.error('Error reading file: %s', POINTS)
+        sys.exit(1)
+    if not os.path.isfile(ELEVATION):
+        logging.error('Error reading file: %s', ELEVATION)
+        sys.exit(1)
+    curvature = curvature_option(CURVATURE)
+    if not curvature[0]:
+        logging.error('Wrong curvature option: %s', CURVATURE)
+        sys.exit(1)
+
+    sys.exit(main(POINTS, ELEVATION,
+                  LINKS, curvature, SLOPE,
+                  PATH, WAYPOINTS))

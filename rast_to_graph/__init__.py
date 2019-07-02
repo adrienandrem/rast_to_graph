@@ -6,6 +6,8 @@ Created on Fri Jun 28 19:04:01 2019
 @author: aandre
 """
 
+import re
+
 from datetime import datetime
 
 from osgeo import ogr
@@ -34,6 +36,18 @@ class Timer():
           if Timer.stopTimes[key] is not None:
             delta = Timer.stopTimes[key] - Timer.startTimes[key]
             print delta
+
+
+def curvature_option(cli_option):
+    """Extract curvature constraint from command line option"""
+    method, threshold = None, None
+
+    if re.match(r'^[A-Z]+=\d+(?:\.\d+)?$', cli_option, re.I):
+        m_str, t_str = cli_option.split('=')
+
+        method, threshold = m_str.upper(), float(t_str)
+
+    return method, threshold
 
 
 def imp_raster(filename):
