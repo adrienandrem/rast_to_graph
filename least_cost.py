@@ -30,30 +30,7 @@ import argparse
 from osgeo import ogr
 
 from rast_to_graph import link_pattern, imp_raster
-
-
-class Timer():
-  """Timer to show processing time"""
-  startTimes = dict()
-  stopTimes = dict()
-
-  @staticmethod
-  def start(key=0):
-    Timer.startTimes[key] = datetime.now()
-    Timer.stopTimes[key] = None
-
-  @staticmethod
-  def stop(key=0):
-    Timer.stopTimes[key] = datetime.now()
-
-  @staticmethod
-  def show(key=0):
-    if key in Timer.startTimes:
-      if Timer.startTimes[key] is not None:
-        if key in Timer.stopTimes:
-          if Timer.stopTimes[key] is not None:
-            delta = Timer.stopTimes[key] - Timer.startTimes[key]
-            print delta
+from rast_to_graph import Timer
 
 
 class Graph():
@@ -76,28 +53,6 @@ class Graph():
             sum_nodes += len(self.edges[node])
 
         return sum_nodes
-
-
-def imp_init_point(filename, transform):
-    """Read points"""
-
-    init_list = []
-
-    # Open the init point shapefile to project each feature in pixel coordinates
-    datasource = ogr.Open(filename)
-    layer = datasource.GetLayer()
-    for feat in layer:
-        geom = feat.GetGeometryRef()
-        mx, my = geom.GetX(), geom.GetY()
-
-        # Convert from map to pixel coordinates.
-        px = int(( my - transform[3] + transform[5]/2)/transform[5])
-        py = int(((mx - transform[0] - transform[1]/2)/transform[1]))
-
-        init_list.append((px, py))
-
-    # return the list of init point with x, y pixel coordinates
-    return init_list, layer.GetSpatialRef()
 
 
 def imp_end_point(gt):
