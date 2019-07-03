@@ -65,26 +65,27 @@ def imp_raster(filename):
     return iArray, scr, proj, resolution
 
 
-def imp_init_point(filename, transform):
+def imp_init_point(filepath, transform):
     """Read points"""
-
-    init_list = []
+    ulx, x_res, __, uly, __, y_res = transform
+    points = []
 
     # Open the init point shapefile to project each feature in pixel coordinates
-    datasource = ogr.Open(filename)
+    datasource = ogr.Open(filepath)
+
     layer = datasource.GetLayer()
-    for feat in layer:
-        geom = feat.GetGeometryRef()
+    for feature in layer:
+        geom = feature.GetGeometryRef()
         mx, my = geom.GetX(), geom.GetY()
 
         # Convert from map to pixel coordinates.
-        px = int(( my - transform[3] + transform[5]/2)/transform[5])
-        py = int(((mx - transform[0] - transform[1]/2)/transform[1]))
+        px = (my - uly + y_res/2)/y_res
+        py = (mx - ulx - x_res/2)/x_res
 
-        init_list.append((px, py))
+        points.append((int(px), int(py)))
 
-    # return the list of init point with x, y pixel coordinates
-    return init_list, layer.GetSpatialRef()
+    # Return the list of init point with x, y pixel coordinates
+    return points, layer.GetSpatialRef()
 
 
 def imp_end_point(filepath, transform):
