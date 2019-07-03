@@ -594,7 +594,7 @@ def main(points, elevation,
         i += 1
         print 'Searching the least cost path done'
 
-        if end_id ins not None:
+        if end_id is not None:
             act = end_id
             leastCostPath = [end_id]
             print 'Create the least cost path as OGR LineString...'
